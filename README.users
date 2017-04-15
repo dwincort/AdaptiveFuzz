@@ -1,0 +1,17 @@
+Using fuzz
+---------------------------------------
+
+You need ocaml >= 4.02, ocamlfind, and ocamlbuild, as well as 
+standard gnu tools like gcc and make.
+
+From the main directory, do:
+$ make
+to make fuzz.
+
+
+How to run programs
+---------------------------------------
+
+$ ./fuzz examples/runTests.fz
+
+

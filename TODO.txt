@@ -1,0 +1,76 @@
+
+TODO created 2/22/2016
+This file contains notes about bugs and feature requests for Adaptive Fuzz.
+
+
+
+BUGS:
+- 4/14/2017
+    Unmarshaling arbitrarily fails sometimes.  It has useless error messages, and I'm not sure what the deal is.
+- 4/14/2017
+    Gradient descent currently doesn't type check for some reason ... likely having to do with recent
+    changes to the partial evaluation system.
+- 6/24/2016
+    I have some anecdotal (but not reproducable) evidence that the sensitivity checker may return NaN.
+    I've made an attempt to address this, but as I have no test case to run it on, I'm not sure if it's
+    a bug anymore or not.
+
+Feature Requests:
+- 1/25/2017
+    Add random sampling (secrecy of the sample).
+- 2/23/2016
+    Add better type inference.
+
+Ideas to improve performance
+- 1/25/2017
+    Use profiling to improve performance.  See http://caml.inria.fr/pub/docs/manual-ocaml-400/manual031.html
+    For starters: Start a run with the big database, and then kill it once it creates its piece.  Recompile the piece with the
+    profiler, and see what happens.  Use this data to inform what should be optimized.  Potentially:
+    - Primml.vectorbagFromFile should generate vectors directly.
+    - Vector operations should maybe be able to do in-place updates?  As is, vmap, vperformat, vzipwith all allocate new arrays.
+    - Add labeledVectorBagFromFile, which automatically returns a bag of ('a, 'a vector) elements.
+    - Remove uses of vcons and vuncons in code -- it's super slow -- and then remove the functions altogether.
+    - Avoid uses of vectorToList and listToVector wherever possible
+- 1/20/2017
+    It would be great if the database could be kept in memory between calls to runfuzz.  Is there some way to share this?
+    It might mean that, instead of running a new ocaml process for each call to runfuzz, we have one curator process and
+    channels to communicate between the analyst and curator.  This would mean we have to do some sort of "eval" to run the
+    code though (possibly preventing compiler optimizations).  It's not clear if that's worth it.
+
+Code Beautification:
+- 2/22/2016
+    When primitive functions are interpreted, they can create new terms (e.g. result terms).  However, the current implementation 
+    does not carry file info into primfun interpretation, so the terms are all lacking this data.  The interpretation of primfun 
+    should be updated to take a fileinfo as an argument so that produced data and error messages are better.  This will affect 
+    types, interpreter, and prim (and likely some other files as a side effect).
+- 2/22/2016
+    Primitive function definitions are put into the program during the interpretation phase (Interpreter.lookup_prim).  This means 
+    that prior to this, primfuns are reliant upon a simple string to differentiate them from each other.  Really, this string 
+    should only be for debug purposes.  To fix this, I anticipate passing the primfun list to the parser and having the syntax 
+    tree be constructed with primfuns directly.  This will likely affect types, parser, and interpreter (and likely some other 
+    files as a side effect).
+- 2/22/2016
+    There are two monads used in this codebase, the checker monad for type checking and the interpreter monad for interpreting.  
+    They are quite similar, but there is no monad module to allow sharing of similar functions (e.g. mapM, mapMSi, mapMTy, etc.).  
+    This seems silly and rectifiable, but I don't quite know how to do it in ocaml.
+
+
+Extended Documentation for in-code comments
+- 4/10/2017 FIXME in src/primml.ml (readCmemFromFile)
+    If the curator memory is not able to be read properly, the system will silently convert it to None.  This seems overly
+    restrictive but probably isn't too bad.
+- 2/23/2016 FIXME in lib/primitives.fz (p_sample)
+    The sample operator is currently implemented as syntax because of the lack of type inference support.  Once type inference 
+    is added, this could be changed to a primitive.
+- 2/23/2016 TODO in src/math.ml
+    The system may be vulnerable to floating point related attacks, and the way to address this may be to do our own 
+    probability calculations (which are used for add_noise).
+- 2/23/2016 TODO in src/parser.mly (extend_var)
+    The Ctx module has been extended with extra support for adding variables to the context, but the parser is not yet making 
+    use of this support.  Updating this shouldn't change any visible outputs, but it may make debugging the parser (after 
+    future changes, say) easier.  Also, it's just a little cleaner and more elegant.
+- 2/23/2016 TODO in src/parser.mly (Term: LET)
+    The parser should probably throw an error if you try to write "let (x,x) = ...", but right now, it accepts it just fine.
+- 8/16/2016 NOTE in src/syntax.ml (tmEq)
+    PVals are compared on structural equality only.  That is, two distributions may be indistinguishable but not equal.
+

@@ -1,0 +1,19 @@
+
+#include "library-bags.fz"
+
+function cdf
+  (eps : num)
+  (buckets : list(num))
+  (db :[[length[num] buckets * eps]] num bag)
+  : fuzzy list(num) {
+    case unfold buckets of {
+      inl(_) => return nil[num]
+    | inr(xxs) => let (x,xs) = xxs;
+                  let (lt, gt)  = bagsplit[num] (fun (n : num) : bool { n < x } ) db;
+                  sample count  = add_noise eps (bagsize lt);
+                  sample bigger = cdf eps xs gt;
+                  return (cons[num] count bigger)
+    }
+}
+
+"cdf"

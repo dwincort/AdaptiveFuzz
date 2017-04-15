@@ -1,0 +1,86 @@
+
+
+// Include the lists and bags library.
+import "lib/library-lists.fz"
+
+/* cpp for tree type */
+// #define tree(A,B)       (mu YY => (B + (A, (YY,YY))))
+
+typedef tree = forall (A, B) . (mu YY => (B + (A, (YY, YY))));
+
+function leaf forall(N,L) (l : L) : tree[N][L] {
+  fold[tree[N][L]] (inl[L][(N, tree[N][L], tree[N][L])]{l})
+}
+
+function node forall(N,L) (n : N) (left : tree[N][L]) (right : tree[N][L]) : tree[N][L] {
+  fold[tree[N][L]] (inr[L][(N, (tree[N][L], tree[N][L]))]{(n,(left,right))})
+}
+
+function showTree 
+  forall(A,B) 
+  (pA : A -o string) 
+  (pB : B -o string) 
+  (t : tree[A][B]) 
+  : string {
+    case unfold t of {
+      inl(b) => pB b
+    | inr(u) => let (a,ts) = u;
+                let (t1,t2) = ts;
+                "("^(pA a)^","^(showTree[A][B] pA pB t1)^","^(showTree[A][B] pA pB t2)^")"
+    }
+}
+
+// runTree takes a row of parameters and a tree and returns the 
+// value that the tree predicts for this row.
+// runTree : list(bool) -o tree -> bool
+function runTree
+  forall(N,L)
+  (choose : N -> bool)
+  (t : tree[N][L])
+  : L {
+    case unfold t of {
+      inl(b) => b
+    | inr(u) => let (a,ts) = u;
+                let (t1,t2) = ts;
+                runTree[N][L] choose (if (choose a) then { t1 } else { t2 })
+    }
+}
+
+// makeTrees takes a list of unused parameters (initially [1..k])
+// and a tree and constructs a list of all possible trees that are 
+// have exactly one more node.
+function makeTrees
+  forall(N,L)
+  (params : list[N])
+  (leafVals : list[L])
+  (t : tree[N][L])
+  : list[tree[N][L]] {
+    case (unfold t) of {
+      inl(l) => list_concat[tree[N][L]]
+        (list_map[N][list[tree[N][L]]]
+          (fun (n : N) : list[tree[N][L]] {
+            list_concat[tree[N][L]]
+            (list_map[L][list[tree[N][L]]]
+              (fun (l1 : L) : list[tree[N][L]] {
+                (list_map[L][tree[N][L]]
+                  (fun (l2 : L) : tree[N][L] {
+                    node[N][L] n (leaf[N][L] l1) (leaf[N][L] l2)})
+                  (remove[L] l1 leafVals))})
+              leafVals)})
+          params)
+    | inr(u) => let (n,ts) = u;
+                let (t1,t2) = ts;
+                params' = remove[N] n params;
+                list_append[tree[N][L]]
+                  (list_map[tree[N][L]][tree[N][L]]
+                    (fun (t : tree[N][L]) : tree[N][L] {
+                      node[N][L] n t t2 })
+                    (makeTrees[N][L] params' leafVals t1))
+                  (list_map[tree[N][L]][tree[N][L]]
+                    (fun (t : tree[N][L]) : tree[N][L] {
+                      node[N][L] n t1 t })
+                    (makeTrees[N][L] params' leafVals t2))
+    }
+}
+
+()

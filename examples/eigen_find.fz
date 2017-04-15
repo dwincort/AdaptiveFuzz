@@ -1,0 +1,69 @@
+
+
+// Include the bags libraries (lists is included with this).
+import "library-lists.fz"
+
+/*
+The sensitive data is a matrix.
+A matrix is a vector of rows, which each are vectors of A values.
+*/
+
+typedef matrix = forall (A) . (A vector) vector;
+typedef db = clipped matrix
+
+// Finds the max of the absolute values of the given vector.
+absumV = fun (v : nvec) : num {
+  function maxabs (b : num) (a : num) : num { max (op_abs b) (op_abs a) }
+  vfoldl[num][num] maxabs 0 v
+}
+
+function count (start : int) (end : int) : int list {
+  if start > end then {
+    nil[int]
+  } else {
+    cons[int] start (count (start +. 1) end)
+  }
+}
+
+function matrixMultGreen
+  (eps : num)
+  (numIters : int)
+  (v : num vector)
+  : num vector {
+    function redfun (i : int) (db :[[eps * (absumV v)]] db) : fuzzy num {
+      row = vindex[clipped vector] (listToVector[clipped] (nil[clipped])) i db;
+      add_noise eps (vectorIP v row)
+    }
+    function mapfun (i : int) : num {
+      rz = runFuzz[db][num] eps (redfun i)
+      case rz of {
+        inl(s) => print s; 0
+        inr(r) => r
+    }}
+    nlist = count 0 ((vsize[num] v) -. 1);
+    v' = vmap[int][num] mapfun nlist
+    print (showVec[num] showNum v');
+    v'' = normalize v';
+    print ("Normalized to: "^(showVec[num] showNum v''));
+    if numIters > 0 then {
+      matrixMultGreen eps (numIters -. 1) v''
+    } else { v'' }
+}
+
+// WHITE ZONE
+function main (dbMaxSize : int) (epsexp : num) (fn : string) : string {
+  db = fun (u:()) {(db = ...)};
+  loadDB[db] db (1, 0.00001);
+  dbsize = dbMaxSize;
+  numIters = 20;
+  eps = 1 / (pow 2 epsexp);
+  v = ...;
+  print "Find Eigenvector";
+  print ("ε per iteration = "^showNum eps);
+  print ("dbsize = "^showNum dbsize);
+  print ("Number of iterations = "^showNum numIters);
+  print ("Original v = "^(showVec[num] showNum v));
+  gdGreen eps numIters v
+}
+main
+

@@ -1,0 +1,43 @@
+import "lib/library-lists.fz"
+
+// Testing lists
+
+l123 = cons[num] 1.0 (cons[num] 2.0 (cons[num] 3.0 nil[num]));
+l123n = cons[num] (0.0 - 1.0) (cons[num] (0.0 - 2.0) (cons[num] (0.0 - 3.0) nil[num]));
+l246 = cons[num] 2.0 (cons[num] 4.0 (cons[num] 6.0 nil[num]));
+l456 = cons[num] 4.0 (cons[num] 5.0 (cons[num] 6.0 nil[num]));
+l123s = cons[string] "1" (cons[string] "2" (cons[string] "3" nil[string]));
+
+l123456 = listFromFile[num] 100 "examples/data/list1.dat";
+absum = fun (l : list[num]) : num { list_lfoldl[num][num] (fun (accum :[] num) { fun (x :[] num ) { accum + (op_abs x) } }) 0 l };
+
+
+assertEq[list[num]]    "Lists #1 " (list_map[num][num] (fun (x : num) : num { x + 3.0 }) l123) l456;
+assertEq[list[string]] "Lists #2 " (list_map[num][string] showNum l123) l123s;
+assertEq[num]          "Lists #3 " (list_foldl[num][num] op_add 0.0 nil[num]) 0.0;
+assertEq[num]          "Lists #4 " (list_foldl[num][num] op_add 0.0 l456) 15.0;
+assertEq[num]          "Lists #5 " (length[num] nil[num]) 0;
+assertEq[num]          "Lists #6 " (length[num] l123) 3;
+assertEq[string]       "Lists #7 " (head[string] "foo" l123s) "1";
+assertEq[list[num]]    "Lists #8 " (tail[num] nil[num]) nil[num];
+assertEq[list[num]]    "Lists #9 " (tail[num] (tail[num] (tail[num] l123456))) l456;
+assertEq[string]       "Lists #10" (head[string] "foo" nil[string]) "foo";
+assertEq[string]       "Lists #11" (head[string] "foo" (tail[string] (tail[string] (tail[string] (tail[string] l123s))))) "foo";
+assertEq[list[num]]    "Lists #12" (list_append[num] l123 l456) l123456;
+assertEq[list[int]]    "Lists #13" (list_concat[int] nil[list[int]]) nil[int];
+assertEq[list[num]]    "Lists #14" (list_concat[num] (cons[list[num]] l123 (cons[list[num]] l456 nil[list[num]]))) l123456;
+assertEq[list[num]]    "Lists #15" (remove[num] 2.0 l123) (cons[num] 1.0 (cons[num] 3.0 nil[num]));
+assertEq[list[num]]    "Lists #16" (remove[num] 4.0 l123) l123;
+assertEq[num]          "Lists #17" (index[num] 0.0 1 l456) 5.0;
+assertEq[num]          "Lists #18" (index[num] 0.0 3 l456) 0.0;
+assertEq[list[num]]    "Lists #19" (performAt[num] 1 (fun (x : num) : num { x + 1 }) l123) (cons[num] 1.0 (cons[num] 3.0 (cons[num] 3.0 nil[num])));
+assertEq[list[num]]    "Lists #20" (list_lmap[num][num] 3.0 (fun (x : num) : num { scale 3 x }) l123) 
+                                    (cons[num] 3.0 (cons[num] 6.0 (cons[num] 9.0 nil[num])));
+assertTyCheck[list[num]][list[num]]  "Lists #21" true 3.0 (list_lmap[num][num] 3.0 (fun (x :[3] num) : num { scale 3 x }));
+assertTyCheck[list[num]][list[num]]  "Lists #22" true 6.0 (vectorMap[num][num] 2 3 0.0 (fun (x :[2] num) : num { scale 2 x }));
+assertEq[list[num]]    "Lists #23" (vectorMap[num][num] 2 3 0.0 (fun (x :[2] num) : num { scale 2 x }) l123) l246;
+                                    
+assertEq[num]          "Lists #24" (absum l123) 6.0;
+assertEq[num]          "Lists #25" (absum l123n) 6.0;
+
+"test"

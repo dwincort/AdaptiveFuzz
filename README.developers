@@ -1,0 +1,92 @@
+Adaptive Fuzz structure and general module hierarchy
+---------------------------------------
+
+When exploring Adaptive Fuzz, a good place to begin is with the Types module.  Granted, it depends on Support.FileInfo, but 
+this is a small, straightforward module that deals with file information.  For the purposes of Types, it simply 
+provides a type to represent where a piece of abstract syntax came from in a file.
+
+The Types module declares all of the most important base types for Adaptive Fuzz, notably including the sensitivity type 
+(si), the type for types (ty), and the type for terms (term).
+
+
+\paragraph{Main Structure}
+After understanding the types, one can follow the path from source file to interpreted result by following the 
+chain of modules: parser -> tycheck -> interpreter -> prim.
+\begin{itemize}
+\item The parser technically depends on the lexer, but the lexer is hardly necessary to understand the conversion 
+    from source to syntax tree.
+\item The type checker has a number of submodules: 
+    \begin{itemize}
+    \item TypeCheckMonad contains the functions for the checker monad.
+    \item TypeSens deals with sensitivities in the type.
+    \item TypeInf deals with the small amount of type inference that is performed.
+    \item TypeSub deals with type polymorphism and checking if types are equal to/are subtypes of other types.
+    \end{itemize}
+    After that, the core type checking is done with the type_of function.  Because this function is in the 
+    checker monad, there is also a front-facing function get_type that will convert the monadic failure to 
+    an ocaml error.
+    
+    Note that type checking can proceed \emph{with} sensitivity checking turned on or \emph{without}.
+\item The interpreter has one submodule, InterpMonad, that contains functions for the interp monad.  Beyond 
+    that, there is the interp function for interpreting functions and the run_interp function which is the 
+    non-monadic version of this.  Note that the interp monad can internally switch between partial and 
+    full evaluation, and also, the interp monad can call out to the type checker (with 
+    InterpMonad.checkerToInterpreter).
+\item The Prim module contains definitions for Fuzz's primitive functions.  It begins with a bunch of helper 
+    functions for creating primfuns, then there are a bunch of specific implementations for primitive functions, 
+    and finally, there is the mapping that associates the names of the primitive functions (as strings) to 
+    their definitions (as primfuns).
+\end{itemize}
+
+
+\paragraph{Partial Evaluation}
+Note that there is a mutual dependence between then type checker and the interpreter, which is encoded by
+requiring that a "pinterp" function be provided to the type checker when it is created (thus, really, the
+type checker depends on the interpreter and not the other way around).  This is because the type checker
+can perform \emph{partial evaluation} on a term in order to try and find a type for it.  This is primarily
+used to evaluate expressions in sensitivities, but it can also be used to unroll loops and otherwise simplify
+the job of the type checker.  In essence, type checking proceeds as follows:
+
+First, type checking proceeds regularly.
+If type checking fails, the "pinfo" component of the type checking monad is examined.
+If it is Some value, then the term is partially evaluated.  If partial evaluation succeeds,
+type checking is tried again.  Otherwise, or if type checking fails again, the original error
+is thrown.
+
+Partial evaluation is not exactly the same as regular evaluation (see the pinterp function in Interpreter).
+Critically, it evaluates the expressions found in sensitivities in functions (and primitive function arguments).
+
+
+\paragraph{Compilation}
+In addition to the path from source file to interpreted result, there is a path from interpreted
+runFuzz command to compiled red zone execution that goes from prim -> fuzztoml -> primml.
+\begin{itemize}
+\item The Prim module can run everything, but Adaptive Fuzz is designed so that the database-sensitive
+    Fuzz queries can be compiled and run on a separate process.  The call to this can be found in
+    Prim.runRedZone.
+\item The Fuzztoml module is essentially a pretty printer that turns a Fuzz syntax tree into OCaml code
+    that can then be compiled by the OCaml compiler.  Its function runCompiled also handles compilation,
+    running the compiled program, some inter-process communication, and error handling.
+\item The Primml module is the main support library for any compiled chunk of Adaptive Fuzz.  It contains
+    most of the definitions of the primitive functions (some functions are not supported in compiled code),
+    but as pure OCaml code (rather than as functions over syntax trees like in the Prim module).
+\end{itemize}
+Communication between processes is entirely text based and handled with pretty printing and rudimentary parsing.
+
+
+\paragraph{The Rest}
+Next, there is the main module that controls Fuzz: the Fuzz module itself.  This ties together uses 
+of the lexer/parser, type checking, and interpreter, but it has very little logic of its own.
+
+The rest of the modules offer one variety or another of support.
+\begin{itemize}
+\item Syntax has support for mapping and equality over syntax trees.
+\item Ctx support the variable context that is used during type checking.
+\item Support has three submodules for file info, runtime errors, and command line options for Fuzz.
+\item Math contains the pure math for Fuzz's differential privacy mechanisms.
+\item Print contains pretty printing functions for all of the special types in Fuzz.
+\item Option has a few useful functions for working with ocaml's Option type.
+\item Util contains a couple of utility functions not directly related to Fuzz.
+\end{itemize}
+
+

@@ -1,0 +1,135 @@
+
+// Testing out partial evaluation and sensitivities with simple terms in them.
+
+import "library-lists.fz"
+
+function test1 (x : num) : string {
+  function fuzzyConstMult (eps : num) (c : num) (n :[[eps * c]] num) : fuzzy num {
+    add_noise eps (scale c n)
+  }
+  rz = runFuzz[num][num] 3.0 (fuzzyConstMult 1.0 x);
+  case rz of {
+    inl(s) => s
+  | inr(z) => if (op_abs (x * 100.0 - z)) < 10.0 then {"succ"} else {"fail"}
+  }
+}
+
+function test2 (x : num) : string {
+  function foo (c : num) (n :[[c]] num) : fuzzy () {
+    x = assert (showNum n) true;
+    return[()] x
+  }
+  rz = runFuzz[num][()] 3.0 (foo x);
+  case rz of {
+    inl(s) => s
+  | inr(_) => "succ"
+  }
+}
+
+function test3 (x :[] num) : fuzzy num {
+  if x == 1 then {
+      return 100
+  } else {
+      return 200
+  }
+}
+// left is true and right is false
+function op_eqNB forall(A) (op1 : A) (op2 : A) : (() + ()) {
+    if op1 == op2 then { inl[()][()]{()} } else { inr[()][()]{()} }
+}
+function test4 (x :[] num) : fuzzy num {
+  case op_eqNB x 1 of {
+      inl(_) => return 100
+    | inr(_) => return 200
+  }
+}
+
+function testAT (_ : ()) : string {
+  showRes = fun (x :[] () + bool) {
+    case x of {
+        inl(_) => "()"
+      | inr(b) => showBool b }};
+  case runFuzz[num][(num -o[1] num) token] 4.0 (aboveThreshold[num] 1 1 10) of {
+      inl(s) => s
+    | inr(t) => x = queryAT[num -o[1] num] t (fun (x :[] num) {x});
+                y = queryAT[num -o[1] num] t (fun (x :[] num) {x+100});
+                z = queryAT[num -o[1] num] t (fun (x :[] num) {x+100});
+                showRes x ^ showRes y ^ showRes z
+  }
+}
+
+testLst = cons[num] 1 (cons[num] 0.5 (cons[num] 1 nil[num]));
+sum = fun (l : list[num]) : num { list_lfoldl[num][num] (fun (x :[] num) { fun (accum :[] num ) { x + accum } }) 0 l };
+
+function innerProdFC
+  (v1 : list[num])
+  (v2 :[] list[num])
+  : num {
+    case unfold v1 of {
+      inl(_) => 0.0
+    | inr(nns) => let (n,ns) = nns;
+                  let (c,cs) = uncons[num] 0.0 v2;
+                  (scale n c) + (innerProdFC ns cs)
+    }
+}
+
+function seq 
+  (s : num) (t : num)
+  (f1 : (num -o[[s]] fuzzy num))
+  (f2 : (num -> num -o[[t]] fuzzy num))
+  : (num -o[[s+t]] fuzzy num) {
+  fun (v1 :[[s+t]] num) {
+    sample v2 = f1 v1;
+    f2 v2 v1
+  }
+}
+
+function par 
+  (s : num) (t : num)
+  (f : num -o[[s]] fuzzy num)
+  (g : num -o[[t]] fuzzy num) 
+  : ((num, num) -o[[max (s,t)]] fuzzy (num, num)) { 
+  fun (p :[[max (s,t)]] (num, num)) : fuzzy (num, num) {
+    let (p1, p2) = p;
+    sample p1' = f p1;
+    sample p2' = g p2;
+    return (p1', p2')
+  }
+}
+
+loadDB[num] (fun (_ : ()) {100.0}) (3.5,0.0);
+assertEq[string] "Simple SFuzz #1 " (test1 1.0) "succ";
+assertEq[num]    "Simple SFuzz #2 " (getEpsilon ()) 2.5;
+assertEq[string] "Simple SFuzz #3 " (test1 2.5) "succ";
+assertEq[num]    "Simple SFuzz #4 " (getEpsilon ()) 0.0;
+assertEq[string] "Simple SFuzz #5 " (test1 0.5) "Database is all used up";
+assertEq[num]    "Simple SFuzz #6 " (getEpsilon ()) 0.0;
+loadDB[num] (fun (_ : ()) {100.0}) (8.0,0.0);
+assertEq[string] "Simple SFuzz #7 " (test1 3.1) "runRedZone expected a 3.-sensitive function but found a 3.1-sensitive function";
+assertEq[num]    "Simple SFuzz #8 " (getEpsilon ()) 8.0;
+assert "Simple SFuzz #9 " (test2 2.0 != "succ");
+
+assertTyCheck[list[num]][num] "Simple SFuzz #10" true 1.5 (innerProdFC testLst);
+assertTyCheck[num][fuzzy num] "Simple SFuzz #11" true 2.0 (seq 1 1 (add_noise 1) (fun (x : num) { add_noise 1 }));
+assertTyCheck[(num, num)][fuzzy (num, num)] "Simple SFuzz #12" true 1.5 (par 1.5 1.5 (add_noise 1.5) (add_noise 1.5));
+assertTyCheck[(num, num)][fuzzy (num, num)] "Simple SFuzz #13" true 1.5 (par 1.5 1.0 (add_noise 1.5) (add_noise 1.5));
+// The above one is a little funny looking.  It looks like it shouldn't pass, but the first round of 
+// sensitivity annotation updates is done in the green zone and so is ignored.  Thus, this really 
+// should pass just fine.  The only thing that we really care about is (max s t), and both operations 
+// are within this bound.
+assertTyCheck[(num, num)][fuzzy (num, num)] "Simple SFuzz #14" false 1.5 (par 1.3 1.0 (add_noise 1.3) (add_noise 1.5));
+
+
+
+loadDB[num] (fun (_ : ()) {1}) (1.0,0.0);
+assertTyCheck[num][fuzzy num] "Simple SFuzz #15" false 1 test3;
+// assertEq[(string + num)] "Simple SFuzz #15-2" (runFuzz[num][num] 1.0 test3) 
+//     (inl[string][num]{"TYPE FAIL: (imple-red.fz:28.17) EEE [  1] Cannot satisfy constraint ∞ <= 1.000"});
+assertTyCheck[num][fuzzy num] "Simple SFuzz #16" false 1 test4;
+// assertEq[(string + num)] "Simple SFuzz #16-2" (runFuzz[num][num] 1.0 test4) 
+//     (inl[string][num]{"TYPE FAIL: (imple-red.fz:39.17) EEE [  1] Cannot satisfy constraint ∞ <= 1.000"});
+
+loadDB[num] (fun (_ : ()) {1}) (1.0,0.0);
+assertEq[string] "Simple SFuzz #17" (testAT ()) "falsetrue()";
+
+"test"

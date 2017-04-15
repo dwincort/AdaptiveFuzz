@@ -1,0 +1,56 @@
+T ::=                                           TYPES
+      ()                                        single-valued unit type
+      num                                       "real" numbers
+      int                                       integers
+      bool                                      booleans
+      string                                    strings
+      clipped                                   numbers in the range [0,1]
+      T bag                                     multiset
+      T vector                                  vector
+      T token                                   curator token allowing T operations
+      (T,T)                                     tensor product
+      (|T,T|)                                   with (&-pair)
+      T + T                                     sum
+      fuzzy T                                   probability distributions over T
+      T -o[e] T                                 e-sensitive function
+      T -o T                                    1-sensitive function
+      T -> T                                    ordinary function
+      X                                         type variable
+      mu X => T                                 recursive type
+      forall(X,...,Y) T                         type abstraction
+      T[T]                                      type application
+
+e ::=                                           EXPRESSIONS
+      ()                                        value of unit type
+      R                                         numbers
+      c                                         constant
+      e op e                                    binary functions (+,-,*,/,+.,-.,*.,/.,==,<=,!)
+      (e,e)                                     tensor-pairs
+      let (x,y) = e; e                          tensor destructor
+      (|e,e|)                                   with-pairs
+      fst e                                     with-pair destructor
+      snd e                                     with-pair destructor
+      inl[T][T] e                               left injection into sum
+      inr[T][T] e                               right injection into sum
+      case e {inl(x) => e | inr(x) => e}        case analysis
+      sample x = e; e                           sampled let binding
+      return e                                  monadic return
+      fun (x:T) {e}                             ordinary function
+      fun (x:[r]T) {e}                          r-sensitive function
+      fun (x:[]T) {e}                           1-sensitive function
+      function x (y:T) (z:T) ... : t {e} e      recursive function definition with multiple arguments
+      function x forall(...) (y:T)...: t {e} e  recursive function definition with multiple arguments
+      e e                                       application
+      e[T]                                      type application
+      fold[T] e                                 fold up a recursive type
+      unfold e                                  unfold a recursive type
+      x = e; e                                  let-binding
+      x : t = e; e                              let-binding with type assertion
+      typedef x = t; e                          type definition
+      if e then {e} else {e}                    conditional
+
+Examples:
+
+  f = fun (x : num) { fun (y : num)  { x+y }};
+  f 5
+

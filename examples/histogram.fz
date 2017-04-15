@@ -1,0 +1,18 @@
+
+#include "library-bags.fz"
+
+function histo
+  (eps : num)
+  (buckets : list(num)) 
+  (db :[[length[num] buckets * eps]] num bag)
+  : list(fuzzy num) {
+    numsteps = 100.0;
+    case unfold buckets of {
+      inl(_) => nil[fuzzy num]
+    | inr(xxs) => let (x,xs) = xxs;
+                  slot :[] = add_noise eps (bagsize[num] (bagfilter[num] (fun (y:num) : bool {y<x}) numsteps db));
+                  cons[fuzzy num] slot (histo eps xs db)
+    }
+}
+
+"histo"

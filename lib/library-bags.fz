@@ -1,0 +1,165 @@
+// We use lists in bagpartition
+import "lib/library-lists.fz"
+
+/*
+
+  Most functions dealing with bags are built-in in Fuzz.
+
+  Here we recall their type signatures and their use. For a precise
+  definition see the ICFP10 paper.
+
+*/
+
+//////////////////////////////////////////////////////////////////////
+// Primitives (built-in)
+
+/*
+  emptybag : () -> A bag
+  
+  Creates an empty bag.
+*/
+primitive emptybag forall(A) : A bag { "emptybag" }
+
+/*
+  addtobag : A -o A bag -o A bag
+  
+  Adds the element to the bag.
+*/
+primitive addtobag forall(A) (x :[] A) (xs :[] A bag) : A bag { "addtobag" }
+
+/*
+  bagjoin : A bag -o A bag -o A bag
+  
+  Unions two bags together into a new bag.
+*/
+primitive bagjoin forall(A) (b1 :[] A bag) (b2 :[] A bag) : A bag { "bagjoin" }
+
+
+/*
+  bagshow : (A -> string) -> A bag -> string
+  
+  Given a showable bag, it shows the bag
+*/
+primitive showBag forall(A) (showA : A -> string) (b : A bag) : string { "showBag" }
+
+
+/*
+  bagFromFile : string -> DATA bag
+  
+  Given a file name, loads the data in the file into a bag
+*/
+primitive bagFromFile forall(DATA) (maxsize : int) (file : string) : DATA bag { "bagFromFile" }
+
+/*
+  listbagFromFile : string -> (list(DATA)) bag
+  
+  Given a file name, loads the data in the file into a bag
+*/
+primitive listbagFromFile forall(DATA) (maxsize : int) (file : string) (rexp : string) : list[DATA] bag { "listbagFromFile" }
+
+/*
+  vectorbagFromFile : string -> (DATA vector) bag
+  
+  Given a file name, loads the data in the file into a bag
+*/
+primitive vectorbagFromFile (maxsize : int) (file : string) (rexp : string) : (clipped vector) bag { "vectorbagFromFile" }
+
+/*
+  bagsplit : (A -> bool) -> A bag -o ( A bag x A bag ) 
+
+  Splits a bag in two bags: one containing the elements satisfying the
+  test (the first argument), the other the elements that don't pass
+  the test.
+*/
+primitive bagsplit
+   forall(A)
+   (pred : A -> bool)
+   (b    :[] A bag) : ( A bag,  A bag ) { "bagsplit" }
+
+/*
+  bagfoldl : num -> ((A, B) -> A) -> A -> B bag -> A
+
+  Folds the bag.  This is not a sensitive function.
+*/
+primitive bagfoldl forall (A,B) 
+  (f : B -> A -> B)
+  (a : B)
+  (b : A bag) : B { "bagfoldl" }
+
+/*
+  bagmap : (A -> B) -> A bag -o B bag
+
+  This is the straightforward adaptation of the classical map function
+  on lists to the case of bags.
+*/
+primitive bagmap forall (A,B) (f : A -> B) (a :[] A bag) : B bag { "bagmap" }
+
+
+/*
+  bagsize : A bag -o num
+  
+  Given a bag it returns the number of elements in it.
+*/
+primitive bagsize forall(A) (b :[] A bag) : int { "bagsize" }
+// function bagsize forall(A) (b :[] A bag) : int {
+//   bagfoldl[A][int] 1 (fun (acc :[] int) {fun (_ : A) : int {1 +. acc}}) 0 b
+// }
+
+/*
+  bagsum : (clipped bag) -o num
+
+  Returns the sum of the elements of the bag.
+*/
+primitive bagsum (b :[] clipped bag) : num { "bagsum" }
+// function bagsum (b :[] clipped bag) : num {
+//   bagfoldl[clipped][num] 1 op_add 0 b
+// }
+
+primitive bagsumL (n : int) (b :[[n]] (list[clipped]) bag) : list[num] { "bagsumL" }
+primitive bagsumV (n : int) (v :[[n]] (clipped vector) bag) : num vector { "bagsumV" }
+
+//////////////////////////////////////////////////////////////////////
+// Utilities
+
+/*
+  listtobag : list(A) -o A bag
+  
+  Takes an ordered list and converts it into the less structured bag type.
+*/
+function listtobag forall(A) (lst :[] list[A]) : A bag {
+  case (unfold lst) of {
+    inl(unit) => emptybag[A]
+  | inr(xxs)  => let (x,xs) = xxs;
+                 addtobag[A] x (listtobag[A] xs)
+  }
+}
+
+/*
+  bagfilter : (A -> Bool) -> A bag -o A bag
+
+  Returns a bag containing the elements of the input bag passing the
+  test (the first argument).
+*/
+function bagfilter forall (A) (test: A -> bool) (b:[] A bag) : A bag {
+    let (yes, no) = bagsplit[A] test b;
+    yes
+}
+
+/*
+   bagpartition : list(K) -> (K,A) bag -o list ((K,A) bag)
+
+   bagpartition with counter
+*/
+function bagpartition forall (A, K) (klist: list[K]) (db :[] (K, A) bag) : (list[(K,A) bag]) {
+    case unfold klist of {
+      inl(x) => nil[(K,A) bag]
+    | inr(x) => let (k,ks) = x;
+                let (db1, db2) = bagsplit[(K,A)] 
+                      (fun (y :[] (K,A)) : bool {
+                        let (y1,y2) = y;
+                        y1 == k}) db;
+                cons[(K,A) bag] db1 (bagpartition[A][K] ks db2)
+    }
+}
+
+()

@@ -1,0 +1,337 @@
+
+
+// Include the bags libraries (lists is included with this).
+import "library-bags.fz"
+
+/*
+A database row is a pair of a label and a vector of clipped nums.
+*/
+
+
+
+typedef cvec = clipped vector;
+typedef nvec = num vector;
+typedef db = (clipped, cvec) bag;
+
+vabsum = fun (v : nvec) : num { vsum (vmap[num][num] op_abs v) };
+
+
+function replicate forall(A) (x : A) (n : int) : list[A] {
+  if n <= 0 then { nil[A] } else { cons[A] x (replicate[A] x (n -. 1)) }
+}
+
+function count (start : int) (end : int) : int bag {
+  if start > end then {
+    emptybag[int]
+  } else {
+    addtobag[int] start (count (start +. 1) end)
+  }
+}
+
+
+
+
+function rowop
+  (theta : nvec)
+  (row : (clipped, cvec))
+  : cvec {
+    let (y,rlst) = row;
+    mew = clip (vectorIP theta rlst);
+    // 0 <= mew <= 1
+    // -1 <= y - mew <= 1
+    vmap[clipped][clipped] (fun (x : clipped) : clipped { 
+        temp = (fromClip y - mew) * (fromClip x);
+        clip ((temp + 1) / 2)
+    }) rlst
+}
+
+
+function stagewiseRed
+  (eps : num)
+  (eta : num)
+  (threshold : num)
+  (beta : nvec)
+  (db :[[eps]] db)
+  : fuzzy nvec {
+    len = vsize[num] beta;
+    
+    // We start by doing some preprocessing.
+    n = bagsize[(clipped, cvec)] db;
+    b = bagmap[(clipped, cvec)][cvec] (rowop beta) db;
+    
+    // This function will be what we pass to reportNoisyMax to calculate 
+    // the quality sccores for the parameters.
+    quality = fun (r : int) { fun (nb :[[3]] (int, cvec bag)) : num {
+      if r < 0 then {
+        threshold
+      } else {
+        let (n,b) = nb;
+        res1 = bagsum (bagmap[cvec][clipped] (vindex[clipped] (clip (0.5)) r) b);
+        (scale 2 res1) - n
+      }
+    }};
+    // The indexes plus a -1 value for the threshold
+    rbag = count (0 -. 1) len;
+    // Run reportNoisyMax.
+    sample j = reportNoisyMax[int][(int, cvec bag)] 
+        (eps/2) 3 quality rbag (n,b);
+    // The result is both the index j
+    if (j < 0) then {
+      return beta
+    } else {
+      // we need to know the sign of the value at index j, which means we need the value.
+      sample val = add_noise (eps/6) (quality j (n,b));
+      signedEta = if val > 0 then { eta } else { 0 - eta };
+      return (vperformAt[num] j (op_add signedEta) beta)
+    }
+}
+
+function stagewiseGreen
+  (eps : num)
+  (eta : num)
+  (threshold : num)
+  (iters : int)
+  (beta : nvec)
+  : nvec {
+    e = getEpsilon ();
+    print ("We have "^showNum e^"*ε budget remaining and have so far produced beta="^showVec[num] showNum beta);
+    rz = runFuzz[db][nvec] eps (stagewiseRed eps eta threshold beta);
+    case rz of {
+      inl(s) => print s; beta
+    | inr(beta') =>
+        if (beta == beta') then { print "Threshold reached."; beta }
+                           else { if iters <= 0 
+                               then { print "Max iterations reached."; beta' } 
+                               else { stagewiseGreen eps eta threshold (iters -. 1) beta' }}
+    }
+}
+
+
+
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Gradient Descent stuff
+///////////////////////////////////////////////////////////////////////////////
+function pair forall (A,B) (a :[] A) (b :[] B) : (A,B) { (a,b) }
+function rowopGD
+  (beta : num vector)
+  (theta : nvec)
+  (row : (clipped, cvec))
+  : cvec {
+    let (y,row') = row;
+    row'' = vzipwith[num][clipped][(num, clipped)] pair[num][clipped] beta row';
+    fstNotZero = fun (r : (num,clipped)) { 
+        let (x,_) = r;
+        x != 0
+    };
+    rlst = vfilter[(num,clipped)][clipped] fstNotZero snd[num][clipped] row'';
+    mew = clip (vectorIP theta rlst);
+    // 0 <= mew <= 1
+    // -1 <= y - mew <= 1
+    vmap[clipped][clipped] (fun (x : clipped) : clipped { 
+        temp = (fromClip y - mew) * (fromClip x);
+        clip ((temp + 1) / 2)
+    }) rlst
+}
+
+// This function takes the list theta and reinserts the elements into the
+// non-zero elements of beta.
+function betaIntoTheta
+  (beta : nvec)
+  (theta : nvec)
+  : nvec {
+    case vuncons beta of {
+      inl(_) => beta
+    | inr(xxs) => let (betaval,betarest) = xxs;
+                  if betaval == 0.0 then {
+                      vcons 0.0 (betaIntoTheta betarest theta)
+                  } else {
+                      case vuncons theta of {
+                        inl(_) => vcons 0.0 (betaIntoTheta betarest theta)
+                      | inr(yys) => let (thetaval, thetarest) = yys;
+                                    vcons thetaval (betaIntoTheta betarest thetarest)
+                      }
+                  }
+    }
+}
+
+
+function rowopMSE
+  (theta : nvec)
+  (row : (clipped, cvec))
+  : clipped {
+    let (y,rlst) = row;
+    mew = clip (vectorIP theta rlst);
+    // 0 <= mew <= 1
+    // -1 <= y - mew <= 1
+    r = y - mew;
+    clip (r * r)
+}
+
+function calcMSE (eps : num) (theta : nvec) (db :[[eps]] db) : fuzzy num {
+  n = bagsum (bagmap[(clipped, cvec)][clipped] (rowopMSE theta) db);
+  add_noise eps n
+}
+
+function gdRedAllAtOnce
+  (eps : num)
+  (eta : num)
+  (beta : nvec)
+  (theta : nvec)
+  (db :[[eps]] db)
+  : fuzzy nvec {
+    len = vsize[num] theta;
+    
+    // We're going to need the size of the database to scale our output 
+    // values properly.
+    n = bagsize[(clipped, cvec)] db;
+    
+    // Map over the database using the above "rowop" function then sum.  
+    // This function will get us the information we need, but it will shift 
+    // the calculated values in the bag to the range [0,1] so 
+    // that we can sum them.
+    res1 = bagsumV len (bagmap[(clipped, cvec)][cvec] (rowopGD beta theta) db);
+    
+    // Because the above result was shifted to make sure all values would be 
+    // between 0 and 1, we need to recover the results we want.  We must 
+    // multiply the result by d and add n.
+    res2 = list_lmap[num][num] 2 (fun (x :[[2]] num) : num {
+        (scale 2 x) - n })
+        (vectorToList res1);
+    
+    // The result of the above map (res2) is the exact new correlation vector theta.
+    // We need to add noise to each element so that we can return it.
+    // In order to end up eps-sensitive, we must add (eps / d) noise.
+    eps' = eps / 3 / len;
+    res3 = list_lmap[num][fuzzy num] eps' (add_noise eps') res2;
+    
+    // Next, we convert from a list of fuzzy nums to a fuzzy list of nums, which 
+    // we can then sample to get a result.
+    sample res4 = listfuzz[num] res3;
+    
+    // After that, we multiply by 2*eta.  Because this is done after adding noise, we do not 
+    // need to worry about how big eta is for the purposes of sensitivity.
+    res5 = list_map[num][num] (op_mul (2*eta)) res4;
+    
+    // Lastly, we add our result vector from our original guess theta to get 
+    // our new estimate for theta. (Note that this is an addition not a subtraction 
+    // because the result vector is actually the negation of the gradient descent 
+    // derivative.
+    return (listToVector[num] (zipWith[num][num][num] op_add (vectorToList theta) res5))
+    
+}
+
+function gdGreen
+  (eps : num)
+  (eta : num)
+  (beta : nvec)
+  (theta : nvec)
+  (prevMSE : num)
+  (numIters : int)
+  : string {
+    e = getEpsilon ();
+    print ("We have "^showNum e^"*ε budget remaining and have so far produced theta="^showVec[num] showNum (betaIntoTheta beta theta));
+    rz = runFuzz[db][num] (10*eps) (calcMSE (10*eps) (betaIntoTheta beta theta));
+    case rz of {
+      inl(s) => s
+    | inr(mse) => 
+        print ("Current MSE (calculated with "^showNum (10*eps)^"*ε noise) = "^showNum mse);
+        if numIters <= 0 then {
+          showVec[num] showNum theta
+        } else {
+          thetanorm = vabsum theta;
+          print ("|theta|="^showNum thetanorm);
+          len = vsize[num] theta;
+          rz = runFuzz[db][nvec] (len*eps) (gdRedAllAtOnce (len*eps) eta beta theta);
+          case rz of {
+            inl(s) => s
+          | inr(theta') => gdGreen eps eta beta theta' mse (numIters -. 1)
+          }
+        }
+    }
+}
+
+
+
+function countNonZeroRows (beta : nvec) : int {
+    case vuncons beta of {
+      inl(_) => 0
+    | inr(xxs) => let (x,xs) = xxs;
+                  if x == 0.0 then { countNonZeroRows xs } else { 1 +. countNonZeroRows xs }
+    }
+}
+
+
+function dbFilterAndSetupRow (beta : nvec) (v : cvec) : (clipped, cvec) {
+    case vuncons v of {
+      inl(_) => (clip 0, v)
+    | inr(ycs) => let (y,cs) = ycs;
+                  y' = if y < 0.125 then { clip 0 } else { clip 1 };
+                  row' = vzipwith[num][clipped][(num, clipped)] pair[num][clipped] beta cs;
+                  fstNotZero = fun (r : (num,clipped)) { 
+                      let (x,_) = r;
+                      x != 0
+                  };
+                  row = vfilter[(num,clipped)][clipped] fstNotZero snd[num][clipped] row';
+                  (y',row)
+    }
+}
+
+function dbRowSetup (v : cvec) : (clipped, cvec) {
+    case vuncons v of {
+      inl(_) => (clip 0, v)
+    | inr(ycs) => let (y,cs) = ycs;
+                  y' = if y < 0.125 then { clip 0 } else { clip 1 };
+                  (y',cs)
+    }
+}
+
+// This function should take an int for its second argument, but that would require some rewriting, so it just ignores the fractional part
+function pow (base : num) (p : num) : num {
+  if p < 0 then { 1 / (pow base (0 - p)) } else {
+    if p <= 0.5 then { 1.0 } else { base * (pow base (p - 1)) }}
+}
+
+// WHITE ZONE
+function main (dbMaxSize : int) (epsexp : num) (fn : string) : string {
+  db = fun (u:()) {(db = vectorbagFromFile dbMaxSize fn "[ \\t]+";
+        db = bagmap[cvec][(clipped,cvec)] dbRowSetup db;
+        db)};
+  loadDB[db] db (10000, 0.001);
+  dbsize = dbMaxSize;
+  cutoff = 0.005;
+  maxIters = 50;
+  eta = 0.03;
+  eps = 1 / (pow 2 epsexp);
+  print "Stagewise Regression";
+  print ("ε per iteration = "^showNum eps);
+  print ("dbsize = "^showNum dbsize);
+  print ("cutoff = "^showNum cutoff);
+  print ("maxIters = "^showNum maxIters);
+  print ("eta = "^showNum eta);
+  print ("Labels *are* being set to 0 for <50k and 1 for greater.");
+  beta = listToVector[num] (replicate[num] 0.0 145);
+  beta = stagewiseGreen eps eta (dbsize * cutoff) maxIters beta;
+  numParams = countNonZeroRows beta;
+  if numParams <= 0 then {
+    "No parameters identified in stagewise regression.  Gradient descent aborted."
+  } else {
+    numIters = 40;
+    eta = 0.5;
+    print "Gradient Descent";
+    print ("ε per iteration = "^showNum eps);
+    print ("dbsize = "^showNum dbsize);
+    print ("Number of iterations = "^showNum numIters);
+    print ("eta = "^showNum eta^"/"^showNum dbsize);
+    print ("beta = "^showVec[num] showNum beta);
+    print ("identified variables in beta = "^showInt numParams);
+    print ("Labels *are* being set to 0 for <50k and 1 for greater.");
+    theta = listToVector[num] (replicate[num] 0.0 145);
+    gdGreen eps (eta/dbsize) beta theta dbsize numIters
+}}
+main
+

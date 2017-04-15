@@ -1,0 +1,45 @@
+/*
+  From sized-fuzz.pdf
+
+   Missing types:
+   - None.
+
+   Missing functions:
+   - iterate
+*/
+
+#include "library-lists.fz"
+
+typedef numpair = (num, num);
+typedef db = numpair bag;
+
+function kmeans
+  (iters : int)
+  (eps   : num)
+  (centers : list(numpair))
+  (iterate : num -> db -o[[3*eps]] list(numpair) -> fuzzy list(numpair))
+  (db    :[[3 * iters * eps]] db)
+  : fuzzy list(numpair) {
+    if iters == 0 
+        then { return centers }
+        else { sample next_centers = kmeans (iters -. 1) eps centers iterate db;
+               iterate eps db next_centers }
+}
+
+"test"
+
+/* Using a more mathematical syntax
+
+val kmeans : ∀ i, j : ι. ∀ ε : r .
+    ℕ[i] → ℝ[e] → Bag(ℝ,ℝ) ⊸ [3 * i * e]
+    (ℝ[e] → Bag(ℝ,ℝ) [3 * i * e]⊸ List(ℝ,ℝ)[j] → ◯ List(ℝ,ℝ)[j]) ⊸
+    ◯ List(ℝ,ℝ)[j]
+
+let kmeans iters eps db center iterate =
+  case iters of
+      0     => return centers
+    | n + 1 => let ◯ next_centers = kmeans n eps db centers iterate in
+               iterate eps db next_centers
+
+*/
+

@@ -1,0 +1,127 @@
+
+
+// Include the bags and trees libraries (lists is included with these).
+#include "library-bags.fz"
+#include "library-trees.fz"
+
+/* Also include shortcuts for numtree nodes for convenience */
+
+typedef numtree = tree(int, bool);
+
+function ntnode (p : int) (l : numtree) (r : numtree) : numtree {
+  node[int][bool] p l r
+}
+leafT = leaf[int][bool] true;
+leafF = leaf[int][bool] false;
+
+/*
+A database row is a list of bools.  The 0-indexed value is 
+the label, and the parameters are indexed 1 through k.
+*/
+typedef boollist = list(bool);
+typedef db = boollist bag;
+
+
+
+// testTree takes a set of rows and a tree and returns the number of 
+// times the tree correctly predicts the label for a row.
+// testTree : tree -> db -o int
+function testTree
+  (t : numtree)
+  (db :[] db)
+  : int
+  {
+    let (suc,fail) = bagsplit[boollist]
+        (fun (row : boollist) : bool {
+            b = index[bool] false 0 row;
+            choose = fun (p : int) : bool { index[bool] false p row };
+            runTree[int][bool] choose t == b }) db;
+    bagsize[boollist] suc
+  }
+
+
+// chooseBestTree finds the best tree among those provided
+// so long as it's better than the base tree's error adjusted 
+// by the user provided function.
+// chooseBestTree : tree -> (num -> num) -> list(tree) -> db -o Fuzzy (1 + tree)
+function chooseBestTree
+  (t : numtree)             // the base tree
+  (cutoffMod : num -> num)  // the amount of error to beat
+  (trees : numtree bag)     // the input trees
+  (db :[] db)               // the database
+  : fuzzy numtree           // new tree
+  {
+    test : = fun (t' : numtree) { fun (d :[] db) : num {
+                  score = testTree t' d;
+                  if t == t' then { cutoffMod score }
+                             else { intToFloat score } } };
+    expMech[numtree][db] 1.0 1.0 test (addtobag[numtree] t trees) db
+  }
+
+
+// A function to return a list of nums [k .. 1]
+function listNums (k : int) : list(int) {
+  if (k == 0) then { nil[int] }
+              else { cons[int] k (listNums (k -. 1)) }
+}
+
+
+function generateDecisionTreeHelper
+  (k : int)
+  (evalFun : int -> num -> num -> num -> num) //perhaps the last one should be -o?
+  (delta : num)
+  (epsilon : num)
+  (t : numtree)
+  : numtree
+  {
+    e = getEpsilon ();
+    print ("We have "^showNum e^"*ε budget remaining and have so far produced tree="^showTree[int][bool] showInt showBool t);
+    bools = cons[bool] true (cons[bool] false nil[bool]);
+    trees = listtobag[numtree] (makeTrees[int][bool] (listNums k) bools t);
+    myfun = fun (x : num) : num { evalFun (bagsize[numtree] trees) delta epsilon x };
+    rz = runFuzz[db][numtree] (chooseBestTree t myfun trees);
+    case rz of {
+      inl(s) => print s; t
+    | inr(t') =>
+        d = getDelta ();
+        e = getEpsilon ();
+        if (t == t') then { t' }
+                     else { generateDecisionTreeHelper k evalFun d e t' }
+    }
+  }
+
+
+// This green zone function calls chooseBestTree until a desired metric 
+// is reached.
+function generateDecisionTree
+  (k : int)
+  (evalFun : int -> num -> num -> num -> num) //perhaps the last one should be -o?
+        //  length trees -> delta -> epsilon -> base tree score -> modified tree score
+  : numtree
+  { generateDecisionTreeHelper k (evalFun) 0.0 0.0 leafT }
+
+
+function makeDB (k : int) : db {
+  row1 : = cons[bool] true  (cons[bool] true  (cons[bool] false nil[bool]));
+  row2 : = cons[bool] true  (cons[bool] true  (cons[bool] true  nil[bool]));
+  row3 : = cons[bool] false (cons[bool] false (cons[bool] false nil[bool]));
+  row4 : = cons[bool] false (cons[bool] false (cons[bool] true  nil[bool]));
+  addtobag[boollist] row1
+    (addtobag[boollist] row3
+      (addtobag[boollist] row3
+        (addtobag[boollist] row4
+          (emptybag[boollist]))))
+}
+
+function myeval (len : int) (delta : num) (eps : num) (bs : num) : num {
+  bs
+}
+
+function main (arg : ()) : string {
+  t : = generateDecisionTree 2 myeval;
+  showTree[int][bool] showInt showBool t
+
+}
+
+loadDB[db] (makeDB 2) (5.0,0.0);
+main ()

@@ -1,0 +1,23 @@
+
+// Testing out probablities
+import "primitives.fz"
+
+function ptest (x :[4.0] num) : fuzzy num {
+  p = (sample y = add_noise 1.0 x;
+       return (y * 2.0));
+  sample a = p;
+  sample b = p;
+  return (a - b)
+}
+
+function ptestrun (_ : num) : string {
+  case runFuzz[num][num] 4.0 ptest of {
+    inl(s) => s
+  | inr(x) => if x == 0.0 then { "fail" } else { "succ" }
+  }
+}
+loadDB[num] (fun (_ : ()) {1}) (10.0,0.0);
+
+assertEq[string] "Probability #1" (ptestrun 0) "succ";
+
+"test"

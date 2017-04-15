@@ -1,0 +1,12 @@
+
+// Testing out simple evaluation
+
+import "library-lists.fz"
+
+function fac (n : num) : num {
+  if (n <= 1.0) then {1.0} else {n * (fac (n - 1.0))}
+}
+
+assertEq[num] "Evaluation #1" (fac 5.0) 120.0;
+
+"test"
