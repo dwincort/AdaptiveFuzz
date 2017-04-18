@@ -36,13 +36,13 @@ module InterpMonad = struct
   open Composedp
     
   let (>>=) (m : 'a interpreter) (f : 'a -> 'b interpreter) : 'b interpreter =
-    fun ((db, pe, ctx, plst) as inp) -> match m inp with
-      | (db', pe', Ok a)    -> f a (db', pe', ctx, plst)
+    fun ((db, pe, ctx) as inp) -> match m inp with
+      | (db', pe', Ok a)    -> f a (db', pe', ctx)
       | (_,_, Error _) as e -> e
   
   let (>>) m f = m >>= fun _ -> f
   
-  let return (x : 'a) : 'a interpreter = fun (db, pe, _, _) -> (db, pe, Ok x)
+  let return (x : 'a) : 'a interpreter = fun (db, pe, _) -> (db, pe, Ok x)
   
   let rec mapM (f : 'a -> 'b interpreter) (lst : 'a list) : ('b list) interpreter = 
     match lst with
@@ -80,11 +80,11 @@ module InterpMonad = struct
   
   (* Failing should never happen.  It is always due to either a type problem, which means the 
      type checker has failed, or a primitive problem. *)
-  let fail (message : string) : 'a interpreter = fun (db, pe, _, _) -> (db, pe, Error message)
+  let fail (message : string) : 'a interpreter = fun (db, pe, _) -> (db, pe, Error message)
   let fail_pp (args : ('b, formatter, unit, 'a interpreter) format4) : 'b = kasprintf fail args
   
   let withFailTerm (tm : term) (m : term interpreter) : term interpreter = 
-    fun ((_, pe, _, _) as inp) -> match m inp with
+    fun ((_, pe, _) as inp) -> match m inp with
       | (_, _, Ok _) as res -> res
       | (db, pe', Error s) when Option.is_some pe ->
           interp_messageNoFi 4 "--- Skipping failure \"%s\";@ reverting to state %a." s pp_term tm;
@@ -92,16 +92,16 @@ module InterpMonad = struct
       | res -> res
   
   let isInPartial : bool interpreter = 
-    fun (db, pe, _, _) -> (db, pe, Ok (Option.is_some pe))
+    fun (db, pe, _) -> (db, pe, Ok (Option.is_some pe))
   
   let decLim : unit interpreter =
-    fun (db, pe, _, _) -> match pe with
+    fun (db, pe, _) -> match pe with
       | None -> (db, None, Ok ())
       | Some l -> if l <= 0 then (db, Some l, Error "Partial Evaluation Limit reached")
                             else (db, Some (l-1), Ok ())
   
   let attemptRedZone (sens : epsilon) : bool interpreter =
-    fun (o, pe, _, _) -> match o with
+    fun (o, pe, _) -> match o with
       | None -> (o, pe, Error "**Interpreter** Tried to store a sensitivity when no DB was loaded")
       | Some (db, budget, _, silist) -> begin
           let silist' = (sens, 0.0) :: silist           in
@@ -111,38 +111,29 @@ module InterpMonad = struct
           end
   
   let getDB : term interpreter = 
-    fun (o, pe, _, _) -> match o with
+    fun (o, pe, _) -> match o with
       | None -> (o, pe, Error "**Interpreter** No database loaded")
       | Some (db,_,_,_) -> (o, pe, Ok db)
   
   let storeDB (db : term) (budget : ed) : unit interpreter = 
-    fun (db_init, pe, _, _) -> if Option.is_some pe
+    fun (db_init, pe, _) -> if Option.is_some pe
       then begin interp_messageNoFi 1 "Trying to storeDB in red zone.  Quietly skipping ...";
                  (db_init, pe, Ok ())
       end else (Some (db, budget, budget, []), pe, Ok ())
   
   let getDelta : float interpreter = 
-    fun (db, pe, _, _) -> match db with
+    fun (db, pe, _) -> match db with
       | None -> (db, pe, Error "**Interpreter** Tried to get remaining epsilon budget when no DB was loaded")
       | Some (_, _, (_, del), _) -> (db, pe, Ok del)
   
   let getEpsilon : epsilon interpreter = 
-    fun (db, pe, _, _) -> match db with
+    fun (db, pe, _) -> match db with
       | None -> (db, pe, Error "**Interpreter** Tried to get remaining epsilon budget when no DB was loaded")
       | Some (_, _, (eps, _), _) -> (db, pe, Ok eps)
   
   let getTCtx : context interpreter = 
-    fun (db, pe, ctx, _) -> (db, pe, Ok ctx)
+    fun (db, pe, ctx) -> (db, pe, Ok ctx)
   
-  let getPrimDefs : ((string * primfun) list) interpreter = 
-    fun (db, pe, _, plst) -> (db, pe, Ok plst)
-  
-  let lookup_prim (id : string) : (term -> term interpreter) interpreter =
-    let rec lookup l = match l with
-      | []                    -> fail ("**Interpreter** Primitive "^id^" not found")
-      | (s, PrimFun t) :: l'  -> if s = id then return t else lookup l'
-    in getPrimDefs >>= lookup
-    
   let checkerToInterpreter (c : 'a checker) : 'a interpreter = 
     getTCtx >>= fun ctx ->
     match c (ctx, 0, false, None) with 
@@ -190,14 +181,14 @@ let rec interp (t : term) : term interpreter =
      look up and execute the primitive with its arguments.  However, if we 
      are in partial evaluation mode, they may not all be values, in which 
      case, we fail. *)
-  | TmPrimFun(i, s, ty, ttslst)  ->
+  | TmPrimFun(i, s, PrimFun f, ty, ttslst)  ->
 (*      mapM (fun (tm,ty,si) -> interp tm >>= fun tm -> 
                               return (tm,ty,si)) ttslst >>= fun ttslst ->
       withFailTerm (TmPrimFun(i, s, ty, ttslst))*)
      let tmlst = List.map (fun (tm,_,_) -> tm) ttslst in
      checkerToInterpreter (ty_normalize_app ty) >>= fun ty' ->
      if List.for_all tmIsVal tmlst
-     then (decLim >> lookup_prim s >>= fun f -> f (TmPrimFun(i, s, ty', ttslst)))
+     then (decLim >> f (TmPrimFun(i, s, PrimFun f, ty', ttslst)))
      else fail_pp "**Interpreter** Unevaluated arguments in %a." pp_term t
   
   (* Variables always fail (which will get caught during partial evaluation). *)
@@ -381,11 +372,11 @@ let rec interp (t : term) : term interpreter =
 
 
 let pinterp (t : term) : term interpreter = match t with
-  | TmPrimFun(i, s, ty, ttslst)  ->
+  | TmPrimFun(i, s, pf, ty, ttslst)  ->
       mapM (fun (tm,ty,si) -> mapMTy interp ty >>= fun ty -> 
                               mapMSi interp si >>= fun si ->
                               return (tm,ty,si)) ttslst >>= fun ttslst ->
-      interp (TmPrimFun(i, s, ty, ttslst))
+      interp (TmPrimFun(i, s, pf, ty, ttslst))
   
   | TmAbs(i, bi, (si, ty), tyo, tm) -> 
       mapMSi interp si >>= fun si ->
@@ -399,17 +390,15 @@ let pinterp (t : term) : term interpreter = match t with
   | _ -> interp t
 
 
-(* Given a list of primFuns, this function generates a pinterp for the type checker *)
-let genPinterp prims ctx l t = match pinterp t (None, Some l, ctx, prims) with
+(* This function generates a pinterp for the type checker *)
+let genPinterp ctx l t = match pinterp t (None, Some l, ctx) with
   | (_, Some l', Ok t') when l' < l -> Some (l', t')
   | _ -> None
 
-(* Runs a program.  It takes the program to run as well as a list of 
-   (name * primitive function) pairs providing the behaviors of any 
-   primitive functions. The progam must output a string in the end, 
+(* Runs a program.  The program must output a string in the end, 
    and this will provide that string. *)
-let run_interp (program : term) (prims : (string * primfun) list) : string =
-  match interp program (None, None, Ctx.empty_context, prims) with
+let run_interp (program : term) : string =
+  match interp program (None, None, Ctx.empty_context) with
   | (_, _, Ok (TmPrim(_,PrimTString(s))))   -> s
   | (_, _, Ok _)    -> interp_error "%s" "Interpreter returned a non-string value"
   | (_, _, Error s) -> interp_error "%s" s

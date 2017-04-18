@@ -30,6 +30,12 @@ let existing_tyvar fi id ctx =
       None      -> parser_error fi "Type %s is unbound" id
     | Some var  -> var
 
+(* Look for a primfun in the primitive list *)
+let lookup_prim (fi : info) (id : string) : primfun =
+  match Prim.lookup_prim id with
+  | Some pf -> pf
+  | None -> parser_error fi "Primitive %s does not exist" id
+
 let dummyTy = TyPrim PrimUnit
 
 (* Wrap extend here in order to avoid mutually recursive
@@ -275,10 +281,12 @@ Term :
       }
   | LET LPAREN ID COMMA ID RPAREN EQUAL Expr SEMI Term
       { fun ctx ->
-        (* TODO, what happens with let (x,x) = ...? *)
+        (* Warning for what happens when let (x,x) = ... *)
+        if $3.v = $5.v then parser_warning $1
+          "Both parts of a tensor destructor were bound to %s.  This is probably a bug." ($3.v);
         let ctx_x   = extend_var $3.v ctx          in
         let ctx_xy  = extend_var $5.v ctx_x        in
-	let (tm, next_ctx) = $10 ctx_xy            in
+        let (tm, next_ctx) = $10 ctx_xy            in
         (TmTensDest($1, (nb_var $3.v), (nb_var $5.v), $8 ctx, tm), next_ctx)
       }
   | SAMPLE ID EQUAL Expr SEMI Term
@@ -300,7 +308,9 @@ Term :
         let (qf,   ctx_qf)   = $3 ctx                                       in
         let (args, ctx_args) = $4 ctx_qf                                    in
         let arglst           = args_to_args_list $1 args ctx_args           in
-        let body             = TmPrimFun($8.i, $8.v, $6 ctx_args, arglst)   in
+        let pn               = $8.v                                         in
+        let pf               = lookup_prim ($8.i) pn                        in
+        let body             = TmPrimFun($8.i, pn, pf, $6 ctx_args, arglst) in
         let f_term           = from_args_to_term qf args body               in
 	let (next_tm, next_ctx)     = $10 ctx_let			    in
 

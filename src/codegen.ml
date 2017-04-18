@@ -37,7 +37,7 @@ let rec gen_term ppf t =
 
   | TmPrim (_, prim) -> fprintf ppf "%s" (gen_primitive prim)
 
-  | TmPrimFun (_i, s, _, lst) ->
+  | TmPrimFun (_i, s, _, _, lst) ->
       fprintf ppf "(%s %a)" s (pp_list_generic gen_term "" "" " ") (List.map (fun (t,_,_) -> t) lst)
   
   | TmRecFun (_i, bi, _ty, tm, _) ->

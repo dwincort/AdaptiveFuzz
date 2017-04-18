@@ -113,11 +113,7 @@ and  term =
   | TmVar of info * var_info
   (* Primitive terms *)
   | TmPrim      of info * term_prim
-  (* TODO: Right now, the string in TmPrimFun is necessary, but in the future, I would like 
-     to make the type (info * string * ty * (term * ty * si) list * primfun) and have 
-     the string be entirely for debug purposes. This will involve passing the primfun list to 
-     the parser instead  of the interpreter and having the parser look up the strings directly. *)
-  | TmPrimFun   of info * string * ty * (term * ty * si) list
+  | TmPrimFun   of info * string * primfun * ty * (term * ty * si) list
   
   | TmRecFun    of info * binder_info * ty * term * bool
   
@@ -185,8 +181,7 @@ and  'a interpreter =
     ( dbdata option             (* The database data. *)
     * int option                (* The option part represents whether we are in partial evaluation mode or not;
                                    the int is the number of steps we are allowed to take. *)
-    * context                   (* The context to use for type inference -- typically called with empty context. *)
-    * (string * primfun) list)  (* The primfun map is the set of primitive function implementations. *)
+    * context)                  (* The context to use for type inference -- typically called with empty context. *)
    -> (dbdata option            (* The database data as output. *)
     * int option                (* The partial evaluation limit as output. *)
     * ('a, string) result)      (* The output is either an Ok value or an error with a string. *)

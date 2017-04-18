@@ -59,19 +59,20 @@ Critically, it evaluates the expressions found in sensitivities in functions (an
 
 \paragraph{Compilation}
 In addition to the path from source file to interpreted result, there is a path from interpreted
-runFuzz command to compiled red zone execution that goes from prim -> fuzztoml -> primml.
+runFuzz command to compiled red zone execution that goes from prim -> codegen -> primml.
 \begin{itemize}
 \item The Prim module can run everything, but Adaptive Fuzz is designed so that the database-sensitive
-    Fuzz queries can be compiled and run on a separate process.  The call to this can be found in
+    Fuzz queries can be compiled and run on a separate process (turning the compiler on and off
+    is done by command line argument---it defaults to on).  The call to this can be found in
     Prim.runRedZone.
-\item The Fuzztoml module is essentially a pretty printer that turns a Fuzz syntax tree into OCaml code
-    that can then be compiled by the OCaml compiler.  Its function runCompiled also handles compilation,
+\item The Codegen module is essentially a pretty printer that turns a Fuzz syntax tree into OCaml code
+    that can then be compiled by the OCaml compiler.  The function runCompiled also handles compilation,
     running the compiled program, some inter-process communication, and error handling.
 \item The Primml module is the main support library for any compiled chunk of Adaptive Fuzz.  It contains
     most of the definitions of the primitive functions (some functions are not supported in compiled code),
     but as pure OCaml code (rather than as functions over syntax trees like in the Prim module).
 \end{itemize}
-Communication between processes is entirely text based and handled with pretty printing and rudimentary parsing.
+Communication from the compiled curator process to the interpreted analyst code is handled by marshaling.
 
 
 \paragraph{The Rest}
@@ -87,6 +88,8 @@ The rest of the modules offer one variety or another of support.
 \item Print contains pretty printing functions for all of the special types in Fuzz.
 \item Option has a few useful functions for working with ocaml's Option type.
 \item Util contains a couple of utility functions not directly related to Fuzz.
+\item ComposeDP defines the privacy filters than Adaptive Fuzz uses.
+\item Lexer is the lexer.
 \end{itemize}
 
 

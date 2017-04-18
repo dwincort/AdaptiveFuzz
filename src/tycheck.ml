@@ -542,7 +542,7 @@ let type_of_untied (recur : term -> (ty * si list) checker) (t : term) : (ty * s
     get_ctx_length >>= fun len ->
     return (type_of_prim pt, zeros len)
 
-  | TmPrimFun(i, s, ty, ttslst) ->
+  | TmPrimFun(i, s, _pf, ty, ttslst) ->
     ty_debug i "--> [%3d] Type checking primfun %s" d s;
     si_simpl_ty ty >>= fun ty ->
     mapM (fun (tm,ety,esi) -> 

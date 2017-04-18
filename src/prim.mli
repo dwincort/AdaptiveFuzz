@@ -12,4 +12,4 @@ val rzFileName : string ref
 val pinterpLimit : int ref
 val useCompiler : bool ref
 
-val prim_list : (string * primfun) list
+val lookup_prim : string -> primfun option

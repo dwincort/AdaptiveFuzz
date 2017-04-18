@@ -119,15 +119,14 @@ module Creation = struct
      it from being evaluated too soon.  Essentially, it helps enforce that probabilistic values, which
      should only be evaluated when absolutely necessary, are properly lazy.  In practice, it works by
      immediately returning a PVal, which is a lazy thunk, and sending all of the argument data to a new
-     primitive function given my the string argument newprim.  Thus, all primitives that use thunkify
-     must be written with 2 lines in prim_list: one for the original primitive and another for the
-     thunkified version.  (See add_noise's definition in prim_list for an example.) *)
+     primitive function given by the argument. *)
   let thunkify
     (name : string)
-    (newprim : string)
+    (newprimName : string)
+    (newprimFun : primfun)
     : primfun = 
     PrimFun (fun t -> match t with
-    | TmPrimFun(i, s, ty, ttslst) -> return (mkPVal mkAny di (TmPrimFun(i, newprim, ty, ttslst)))
+    | TmPrimFun(i, _, _, ty, ttslst) -> return (mkPVal mkAny di (TmPrimFun(i, newprimName, newprimFun, ty, ttslst)))
     | _ -> fail_pp "** Primitive Internal ** %s expected a TmPrimFun but was given: %a" name pp_term t)
   
   (* The extractArgs function extracts the term list and output type from the given TmPrimFun argument.  This
@@ -137,7 +136,7 @@ module Creation = struct
     (t : term)
     : (ty * term list) interpreter =
     match t with
-    | TmPrimFun(i, s, ty, ttslst) -> return (ty, List.map (fun (tm,_,_) -> tm) ttslst)
+    | TmPrimFun(i, s, _, ty, ttslst) -> return (ty, List.map (fun (tm,_,_) -> tm) ttslst)
     | _ -> fail_pp "** Primitive Internal ** %s expected a TmPrimFun but was given: %a" name pp_term t
   
   (* The fun_of_*_arg* functions are short hands for making the primitives easily. *)
@@ -509,8 +508,7 @@ let tyCheckFuzzFun
   : term interpreter =
     onlyInFullEval "tyCheckFuzz" >>
     let genFailResult s = return (TmLeft(di, TmPrim(di, PrimTString s), TyPrim PrimUnit)) in
-    getPrimDefs >>= fun primfuns ->
-    match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp primfuns)) with
+    match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
       | Ok (TyLollipop(_, SiConst n, _), _) when n <= sens -> return (TmRight(di, mkUnit di (), TyPrim PrimString))
       | Ok (TyLollipop(_, SiConst n, _), _) -> genFailResult @@
             pp_to_string "tyCheckFuzz expected a %F-sensitive function but found a %F-sensitive function" sens n
@@ -531,8 +529,7 @@ let runRedZone
       | _ -> fail_pp "**Primitive** runRedZone found an unexpected return type: %a" pp_type ty
     ) >>= fun outty ->
     let genFailResult s = return (TmLeft(di, TmPrim(di, PrimTString s), outty)) in
-    getPrimDefs >>= fun primfuns ->
-    match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp primfuns)) with
+    match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
       | Ok (TyLollipop(_, SiConst n, _), _) when n <= sens -> begin
           attemptRedZone n >>= fun succ ->
           match succ, !useCompiler with
@@ -722,8 +719,7 @@ let queryATFun
     onlyInFullEval "aboveThreshold query" >>
     (match tok with
     | (index, TyLollipop(_, SiConst k, TyPrim PrimNum)) -> begin
-        getPrimDefs >>= fun primfuns ->
-        match Tycheck.type_of q (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp primfuns)) with
+        match Tycheck.type_of q (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
           | Ok (TyLollipop(_, SiConst n, _), _) when n <= k -> begin
             match !useCompiler with
             | true -> begin match Codegen.runCompiled (!rzFileName) thisTerm with
@@ -751,6 +747,15 @@ let queryATFun
     | _ -> fail_pp "**Primitive** aboveThreshold received an inappropriate or malformed token."
     ) >>= (fun res -> return (TyPrim PrimUnit, TyPrim PrimBool, res))
     
+
+let selectFun
+  (ty : ty)
+  (beta : float)
+  (bag : term list)
+  : (ty * term list) interpreter =
+    onlyInFullEval "select" >>
+    return (ty, Math.sampleList beta bag)
+
 
 (*****************************************************************************)
 (* Here are the *fromFile primitives. *)
@@ -943,6 +948,7 @@ let prim_list : (string * primfun) list = [
 ("_div", fun_of_2args "_div" exNum exNum mkNum ( /. ));
 
 ("_exp", fun_of_1arg "_exp" exNum mkNum ( exp ));
+("_log", fun_of_1arg "_log" exNum mkNum ( log ));
 ("_abs", fun_of_1arg "_abs" exNum mkNum ( abs_float ));
 ("cswp", fun_of_1arg "cswp" (exPair exNum exNum) (mkPair mkNum mkNum)
     (fun (x,y) -> if x < y then (x,y) else (y,x)));
@@ -1002,14 +1008,16 @@ let prim_list : (string * primfun) list = [
 
 
 (* Differential Privacy mechanisms *)
-("addNoise", thunkify "addNoise" "addNoiseP");
-("addNoiseP", fun_of_2args_i "addNoiseP" exNum exNum mkNum addNoiseFun);
-("reportNoisyMax", thunkify "reportNoisyMax" "reportNoisyMaxP");
-("reportNoisyMaxP", fun_of_5args_i "reportNoisyMaxP" exNum exNum exFun exBag exAny mkAny reportNoisyMaxFun);
-("expMech", thunkify "expMech" "expMechP");
-("expMechP", fun_of_5args_i "expMechP" exNum exNum exFun exBag exAny mkAny expMechFun);
-("aboveThreshold", thunkify "aboveThreshold" "aboveThresholdP");
-("aboveThresholdP", fun_of_4args_with_type_i_self "aboveThresholdP" exNum exNum exNum exAny mkToken aboveThresholdFun);
+("addNoise", thunkify "addNoise" "addNoiseP"
+  (fun_of_2args_i "addNoiseP" exNum exNum mkNum addNoiseFun));
+("reportNoisyMax", thunkify "reportNoisyMax" "reportNoisyMaxP"
+  (fun_of_5args_i "reportNoisyMaxP" exNum exNum exFun exBag exAny mkAny reportNoisyMaxFun));
+("expMech", thunkify "expMech" "expMechP"
+  (fun_of_5args_i "expMechP" exNum exNum exFun exBag exAny mkAny expMechFun));
+("select", thunkify "select" "selectP"
+  (fun_of_2args_with_type_i "select" exNum exBag mkBag selectFun));
+("aboveThreshold", thunkify "aboveThreshold" "aboveThresholdP"
+  (fun_of_4args_with_type_i_self "aboveThresholdP" exNum exNum exNum exAny mkToken aboveThresholdFun));
 ("queryAT", fun_of_2args_with_type_i_self "queryAT" exToken exFun (mkSum mkUnit mkBool) queryATFun);
 
 (* Load data from external file *)
@@ -1034,5 +1042,11 @@ let prim_list : (string * primfun) list = [
 
 ]
 
+(* Look for a primfun in the primitive list *)
+let lookup_prim (id : string) : primfun option =
+  let rec lookup l = match l with
+    | []            -> None
+    | (s, t) :: l'  -> if s = id then Some t else lookup l'
+  in lookup prim_list
 
 

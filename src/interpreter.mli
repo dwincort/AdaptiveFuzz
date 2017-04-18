@@ -36,17 +36,13 @@ module InterpMonad : sig
   val getDelta : float interpreter
   
   val getEpsilon : epsilon interpreter
-  
-  val getPrimDefs : ((string * primfun) list) interpreter 
-  
-  val lookup_prim : string -> (term -> term interpreter) interpreter
 end
 
 open InterpMonad
 
 val interp : term -> term interpreter
 
-val genPinterp : (string * primfun) list -> pinterp
+val genPinterp : pinterp
 
-val run_interp : term -> (string * primfun) list -> string
+val run_interp : term -> string
 

@@ -6,18 +6,18 @@ This file contains notes about bugs and feature requests for Adaptive Fuzz.
 
 BUGS:
 - 4/14/2017
-    Unmarshaling arbitrarily fails sometimes.  It has useless error messages, and I'm not sure what the deal is.
-- 4/14/2017
     Gradient descent currently doesn't type check for some reason ... likely having to do with recent
     changes to the partial evaluation system.
 - 6/24/2016
-    I have some anecdotal (but not reproducable) evidence that the sensitivity checker may return NaN.
+    I have some anecdotal (but not reproducible) evidence that the sensitivity checker may return NaN.
     I've made an attempt to address this, but as I have no test case to run it on, I'm not sure if it's
     a bug anymore or not.
 
 Feature Requests:
+- 4/14/2017
+    Remove dependency on ocamlbuild and ocamlfind to make the system easier to use
 - 1/25/2017
-    Add random sampling (secrecy of the sample).
+    Add test cases for secrecy of the sample (select operator).
 - 2/23/2016
     Add better type inference.
 
@@ -44,12 +44,6 @@ Code Beautification:
     should be updated to take a fileinfo as an argument so that produced data and error messages are better.  This will affect 
     types, interpreter, and prim (and likely some other files as a side effect).
 - 2/22/2016
-    Primitive function definitions are put into the program during the interpretation phase (Interpreter.lookup_prim).  This means 
-    that prior to this, primfuns are reliant upon a simple string to differentiate them from each other.  Really, this string 
-    should only be for debug purposes.  To fix this, I anticipate passing the primfun list to the parser and having the syntax 
-    tree be constructed with primfuns directly.  This will likely affect types, parser, and interpreter (and likely some other 
-    files as a side effect).
-- 2/22/2016
     There are two monads used in this codebase, the checker monad for type checking and the interpreter monad for interpreting.  
     They are quite similar, but there is no monad module to allow sharing of similar functions (e.g. mapM, mapMSi, mapMTy, etc.).  
     This seems silly and rectifiable, but I don't quite know how to do it in ocaml.
@@ -69,8 +63,6 @@ Extended Documentation for in-code comments
     The Ctx module has been extended with extra support for adding variables to the context, but the parser is not yet making 
     use of this support.  Updating this shouldn't change any visible outputs, but it may make debugging the parser (after 
     future changes, say) easier.  Also, it's just a little cleaner and more elegant.
-- 2/23/2016 TODO in src/parser.mly (Term: LET)
-    The parser should probably throw an error if you try to write "let (x,x) = ...", but right now, it accepts it just fine.
 - 8/16/2016 NOTE in src/syntax.ml (tmEq)
     PVals are compared on structural equality only.  That is, two distributions may be indistinguishable but not equal.
 

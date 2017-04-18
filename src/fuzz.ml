@@ -166,7 +166,7 @@ let main () =
     let program = match fnArg with
       | None -> program
       | Some fn -> TmApp(di, program, TmPrim(di, PrimTString fn))
-    in let outputStr = Interpreter.run_interp program Prim.prim_list in
+    in let outputStr = Interpreter.run_interp program in
     main_info dp "The result of the program: %s" outputStr;
   ()
 

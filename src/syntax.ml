@@ -98,9 +98,9 @@ let rec tm_map
   | TmPrim(i, p) ->
     TmPrim(i, p)
     
-  | TmPrimFun(i, s,             ty, ttslst)  ->
+  | TmPrimFun(i, s, pf,             ty, ttslst)  ->
     let ttslst' = List.map (fun (tm, ty, si) -> (ftm ntm nty tm, fty ntm nty ty, fsi ntm nty si)) ttslst in
-    TmPrimFun(i, s, fty ntm nty ty, ttslst')
+    TmPrimFun(i, s, pf, fty ntm nty ty, ttslst')
   
   | TmRecFun(i, bi,                 ty,                 tm, isRec)  ->
     TmRecFun(i, bi, fty (ntm+1) nty ty, ftm (ntm+1) nty tm, isRec)
@@ -302,8 +302,8 @@ let rec tmEq (t1 : term) (t2 : term) : bool =
     TmVar(_,v2) -> v1.v_index = v2.v_index
   | TmPrim(_,p1), 
     TmPrim(_,p2) -> p1 = p2
-  | TmPrimFun(_,_,ty1,ttsl1), 
-    TmPrimFun(_,_,ty2,ttsl2) -> tyEq ty1 ty2 && for_all2 
+  | TmPrimFun(_,s1,_,ty1,ttsl1), 
+    TmPrimFun(_,s2,_,ty2,ttsl2) -> s1 = s2 && tyEq ty1 ty2 && for_all2 
         (fun (tm1,ty1,si1) (tm2,ty2,si2) -> tmEq tm1 tm2 && tyEq ty1 ty2 && siEq si1 si2) ttsl1 ttsl2
   | TmPVal(_, tm1),
     TmPVal(_, tm2) -> tmEq tm1 tm2 (* NOTE: Probabilistic values are compared on structural equality only *)
@@ -434,7 +434,7 @@ let rec tyIsVal (t : ty) : bool = match t with
 let tmInfo t = match t with
     TmVar(fi, _)                -> fi
   | TmPrim(fi, _)               -> fi
-  | TmPrimFun(fi, _, _, _)      -> fi
+  | TmPrimFun(fi, _, _, _, _)   -> fi
   
   | TmPVal(fi, _)               -> fi
   | TmUnPVal(fi, _)             -> fi

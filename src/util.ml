@@ -43,3 +43,9 @@ let contains (s1 : string) (s2 : string) : int option =
     in  try Some (Str.search_forward re s1 0)
         with Not_found -> None
 
+let rec listTake (k : int) (lst : 'a list) : 'a list =
+  match lst, k<=0 with
+  | [],_ -> []
+  | _,true -> []
+  | h::t,false -> h::(listTake (k-1) t)
+

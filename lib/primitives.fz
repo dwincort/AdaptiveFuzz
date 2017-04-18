@@ -37,6 +37,7 @@ primitive op_sub (op1 :[] num ) (op2 :[] num )  : num { "_sub" }
 primitive op_mul (op1 : num ) (op2 : num )      : num { "_mul" }
 primitive op_div (op1 : num ) (op2 : num )      : num { "_div" }
 primitive op_exp (n : num )                     : num { "_exp" }
+primitive op_log (n : num )                     : num { "_log" }
 primitive op_abs (n :[] num )                   : num { "_abs" }
 primitive cswp (xy :[] (num, num))              : (num, num) { "cswp" }
 min = fun (xy :[] (num, num)) : num { let (x,y) = (cswp xy); x };
@@ -183,6 +184,12 @@ primitive queryAT
   (t : Q token)
   (q : Q)
   : () + bool { "queryAT" }
+
+primitive select
+  forall(A)
+  (beta : clipped)
+  (db :[[op_log (1+(1/beta)*(op_exp(1)-1))]] A bag)
+  : fuzzy (A bag) { "select" }
 
 ////////////////////////////////////////////////////////////////////////
 // Curry and uncurry

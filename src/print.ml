@@ -281,7 +281,7 @@ and pp_term ppf t =
     TmVar(_, v)             -> fprintf ppf "%a" pp_vinfo v
   (* Primitive terms *)
   | TmPrim(_, pt)           -> fprintf ppf "%s" (string_of_term_prim pt)
-  | TmPrimFun(_, n, _, ttslst)  -> fprintf ppf "primfun %s with args:@ @[%a@]" n pp_ttslst ttslst
+  | TmPrimFun(_, n, _, _, ttslst)  -> fprintf ppf "primfun %s with args:@ @[%a@]" n pp_ttslst ttslst
   | TmRecFun(_, n, r_ty, tm, _) ->
     fprintf ppf "@[<v>@[<hov>rec %a : @[%a@] =@;<1 1>@[%a@]@]" pp_binfo n pp_type r_ty pp_term tm
   
