@@ -124,7 +124,7 @@ let rec pp_si fmt s =
   match s with
   | SiInfty                -> fprintf fmt "%s" (u_sym Symbols.Inf)
   | SiZero                 -> fprintf fmt "%s" "0"
-  | SiConst flt            -> fprintf fmt "%.3f" flt
+  | SiConst flt            -> fprintf fmt "%.5f" flt
   | SiTerm(t)              -> fprintf fmt "SiTerm(%a)" pp_term t
   | SiAdd (si1, si2)       -> fprintf fmt "(%a + %a)" pp_si si1 pp_si si2
   | SiMult(si1, si2)       -> fprintf fmt "(%a * %a)" pp_si si1 pp_si si2
@@ -195,7 +195,7 @@ and pp_tyerr d ppf s = match s with
   | WrongShape(ty, sh)    -> fprintf ppf "EEE [%3d] Type %a has wrong shape, expected %s type." d pp_type ty sh
   | NotSubtype(ty1,ty2)   -> fprintf ppf "EEE [%3d] %a is not a subtype of %a" d pp_type ty1 pp_type ty2
   | Internal s            -> fprintf ppf "EEE [%3d] Internal error: %s" d s
-  | UnevalSensTerm t      -> fprintf ppf "EEE [%3d] Terms in sensitivity are not allowed in the red zone! Found: %a" d pp_term t
+  | UnevalSensTerm t      -> fprintf ppf "EEE [%3d] Terms in sensitivity are not allowed in the data zone! Found: %a" d pp_term t
   | BadSensTerm t         -> fprintf ppf "EEE [%3d] Sensitivities must be non-negative reals (or infinity).  Found: %a" d pp_term t
 
 

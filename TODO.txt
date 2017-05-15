@@ -3,23 +3,38 @@ TODO created 2/22/2016
 This file contains notes about bugs and feature requests for Adaptive Fuzz.
 
 
-
 BUGS:
-- 4/14/2017
-    Gradient descent currently doesn't type check for some reason ... likely having to do with recent
-    changes to the partial evaluation system.
+- 5/5/2017
+    Marshaling doesn't always work right.  It works fine for simple things, but I can't
+    get it to work with arrays or lists.  I've reverted to a home-made solution (See src/conversion.ml),
+    but I feel like it would be better if Marshal worked (or a full-on lexer/parser solution).
+    (Also see the FIXME in src/conversion.stringToFuzz)
 - 6/24/2016
     I have some anecdotal (but not reproducible) evidence that the sensitivity checker may return NaN.
     I've made an attempt to address this, but as I have no test case to run it on, I'm not sure if it's
-    a bug anymore or not.
+    still a bug or not.
 
 Feature Requests:
-- 4/14/2017
-    Remove dependency on ocamlbuild and ocamlfind to make the system easier to use
 - 1/25/2017
     Add test cases for secrecy of the sample (select operator).
+    Add test cases for vectors and the functions that go with them.
 - 2/23/2016
     Add better type inference.
+- 5/10/2017
+    The type checker is not very good about higher order functions.  That is, we need two functions
+    for, say, list mapping: one that is insensitive (list_map) and one that is sensitive (list_smap).  It certainly feels
+    like the compiler should be able to deduce that, if the function is not sensitive, then the
+    list argument cannot be sensitive and vice versa.  That is, the sensitivity annotation on the
+    function and on the list should just be the max of the sensitivities of the two.  Right now,
+    it's not the smart.
+- 5/10/2017
+    Add a constant "inf" (or another name ...) which represents the "number" infinity.  This would
+    be very useful to have so that it could be provided as an argument to be a sensitivity.
+    Currently, because the num type does not have an infinity, there must be two different functions
+    for e.g. list mapping, one for finite sensitivity and one for infinite.
+    Will adding inf mess with anything else?  How does it play with numerical operators?
+- 5/13/2017
+    Update README.users to include more information about using Adaptive Fuzz (and writing Adaptive Fuzz programs?)
 
 Ideas to improve performance
 - 1/25/2017
@@ -28,9 +43,8 @@ Ideas to improve performance
     profiler, and see what happens.  Use this data to inform what should be optimized.  Potentially:
     - Primml.vectorbagFromFile should generate vectors directly.
     - Vector operations should maybe be able to do in-place updates?  As is, vmap, vperformat, vzipwith all allocate new arrays.
-    - Add labeledVectorBagFromFile, which automatically returns a bag of ('a, 'a vector) elements.
-    - Remove uses of vcons and vuncons in code -- it's super slow -- and then remove the functions altogether.
     - Avoid uses of vectorToList and listToVector wherever possible
+    Results of profiling are inconclusive (or I'm not interpreting them right).
 - 1/20/2017
     It would be great if the database could be kept in memory between calls to runfuzz.  Is there some way to share this?
     It might mean that, instead of running a new ocaml process for each call to runfuzz, we have one curator process and
@@ -38,6 +52,10 @@ Ideas to improve performance
     code though (possibly preventing compiler optimizations).  It's not clear if that's worth it.
 
 Code Beautification:
+- 5/5/2017
+    There are a number of places (Prim.runRedZone is a great example) where I'm using the option type to deal with computations
+    that may fail.  However, I would like to give different error messages depending on how the failure happens.  These should
+    be changed to an Either type (like the Types.result type), and I should write a simple monadic bind for that type.
 - 2/22/2016
     When primitive functions are interpreted, they can create new terms (e.g. result terms).  However, the current implementation 
     does not carry file info into primfun interpretation, so the terms are all lacking this data.  The interpretation of primfun 
@@ -50,6 +68,8 @@ Code Beautification:
 
 
 Extended Documentation for in-code comments
+- 5/14/2015 FIXME in src/conversion.ml (stringToFuzz)
+     Tensor product reading only works if there's no nesting. This should all really be either marshaling or proper parsing.
 - 4/10/2017 FIXME in src/primml.ml (readCmemFromFile)
     If the curator memory is not able to be read properly, the system will silently convert it to None.  This seems overly
     restrictive but probably isn't too bad.

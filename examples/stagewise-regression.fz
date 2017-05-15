@@ -1,0 +1,169 @@
+
+
+// Include the bags libraries (lists is included with this).
+import "library-bags.fz"
+import "examples/gradient-descent-vector.fz"
+// import "gradient-descent-atOnce.fz"
+
+/*
+This file critically depends on the following definitions from the
+gradient descent import:
+- typedef cvec
+- typedef nvec
+- typedef db
+- function calcResid
+- function gradient
+*/
+
+
+function count (start : int) (end : int) : int bag {
+  if start > end then {
+    emptybag[int]
+  } else {
+    addtobag[int] start (count (start +. 1) end)
+  }
+}
+
+
+function selectParam
+  (eps : num)
+  (threshold : num)
+  (beta : nvec)
+  (db :[[2*eps]] db)
+  : fuzzy (int,num) {
+    
+    // We start by doing some preprocessing.
+    b = bagmap[(clipped, cvec)][cvec] (calcResid beta) db;
+    
+    // This function will be what we pass to reportNoisyMax to calculate 
+    // the quality scores for the parameters.
+    
+    quality = fun (r : int) { fun (b :[[3]] cvec bag) : num {
+      if r < 0 then {
+        threshold
+      } else {
+        n = bagsize[cvec] b;
+        res1 = bagsum (bagmap[cvec][clipped] (vindex[clipped] (clip (0.5)) r) b);
+        (scale 2 res1) - n
+      }
+    }};
+    // The indexes plus a -1 value for the threshold
+    rbag = count (0 -. 1) (vsize[num] beta);
+    // Run reportNoisyMax.
+    sample j = reportNoisyMax[int][cvec bag] 
+       eps 3 quality rbag b;
+    // The result is the index i
+    if (j < 0) then {
+      return (j,0)
+    } else {
+      sample val = add_noise (eps/3) (quality j b);
+      return (j, val)
+    }
+//     if (j < 0) then {
+//       return beta
+//     } else {
+//       // we need to know the sign of the value at index j, which means we need the value.
+//       sample val = add_noise (eps/6) (quality j (n,b));
+//       signedEta = if val > 0 then { eta } else { 0 - eta };
+//       return (vperformAt[num] j (op_add signedEta) beta)
+//     }
+}
+
+function stagewise
+  (eps : num)
+  (eta : num)
+  (threshold : num)
+  (iters : int)
+  (beta : nvec)
+  : nvec {
+    e = getEpsilon ();
+    print ("We have "^showNum e^"*ε budget remaining and have so far produced beta="^showVec[num] showNum beta);
+    if iters <= 0 then { print "Max iterations reached."; beta } else {
+      rz = runFuzz[db][(int,num)] (2*eps) (selectParam eps threshold beta);
+      case rz of {
+        inl(s)  => print s; beta
+      | inr(iv) => let (i,v) = iv;
+                   if i<0 then { print "Threshold reached."; beta } else {
+                     signedEta = if v > 0 then { eta } else { 0 - eta };
+                     beta' = vperformAt[num] i (op_add signedEta) beta;
+                     stagewise eps eta threshold (iters -. 1) beta' }
+      }
+    }
+}
+
+
+
+
+
+
+function dbFilterAndSetupRow (beta : bool vector) (cl : (clipped, cvec)) : (clipped, cvec) {
+    let (label, vec) = cl;
+    label = if label < 0.05 then { clip 0 } else { clip 1 };
+    vec = vzipwith[bool][clipped][(bool, clipped)] pair[bool][clipped] beta vec;
+    vec = vfilter[(bool,clipped)] fst[bool][clipped] vec;
+    vec = vmap[(bool,clipped)][clipped] snd[bool][clipped] vec;
+    (label,vec)
+}
+
+function dbRowSetup (cl : (clipped, cvec)) : (clipped, cvec) {
+    let (label, vec) = cl;
+    (if label < 0.05 then { clip 0 } else { clip 1 }, vec)
+}
+
+// This function should take an int for its second argument, but that would require some rewriting, so it just ignores the fractional part
+function pow (base : num) (p : num) : num {
+  if p < 0 then { 1 / (pow base (0 - p)) } else {
+    if p <= 0.5 then { 1.0 } else { base * (pow base (p - 1)) }}
+}
+
+// COMMAND ZONE
+usage_str = "There must be 3 arguments: database size, the inverse exponent for epsilon, and the database filename.";
+function main (args : string vector) : string {
+  if vsize[string] args != 3 then { usage_str } else {
+  dbMaxSize = readInt (vindex[string] "Arg Fail" 0 args);
+  epsexp = readNum (vindex[string] "Arg Fail" 1 args);
+  fn = vindex[string] "Arg Fail" 2 args;
+  db = fun (u:()) {(db = labeledVectorbagFromFile dbMaxSize fn "[ \\t]+";
+        db = bagmap[(clipped,cvec)][(clipped,cvec)] dbRowSetup db;
+        db)};
+  loadDB[db] db (1, 0.00001);
+  dbsize = dbMaxSize;
+  cutoff = 0.005;
+  maxIters = 40;
+  eta = 0.03;
+  eps = 1 / (pow 2 epsexp);
+  print "Stagewise Regression";
+  print ("ε per iteration = "^showNum eps);
+  print ("dbsize = "^showNum dbsize);
+  print ("cutoff = "^showNum cutoff);
+  print ("maxIters = "^showNum maxIters);
+  print ("eta = "^showNum eta);
+  print ("Labels *are* being set to 0 for <50k and 1 for greater.");
+  beta = listToVector[num] (replicate[num] 145 0.0);
+  beta = stagewise eps eta (dbsize * cutoff) maxIters beta;
+  // Once we get beta, we really only care about which values are non-zero
+  beta = vmap[num][bool] (op_neq[num] 0.0) beta;
+  numParams = vsize[bool] (vfilter[bool] id[bool] beta);
+  if numParams <= 0 then {
+    "No parameters identified in stagewise regression.  Gradient descent aborted."
+  } else {
+    db = fun (u:()) {(db = labeledVectorbagFromFile dbMaxSize fn "[ \\t]+";
+          db = bagmap[(clipped,cvec)][(clipped,cvec)] (dbFilterAndSetupRow beta) db;
+          db)};
+    loadDB[db] db (getEpsilon (), getDelta ());
+    numIters = 40;
+    eta = 0.5;
+    print "Gradient Descent";
+    print ("ε per iteration = "^showNum eps);
+    print ("dbsize = "^showNum dbsize);
+    print ("Number of iterations = "^showNum numIters);
+    print ("eta = "^showNum eta^"/"^showNum dbsize);
+    print ("beta = "^showVec[bool] showBool beta);
+    print ("identified variables in beta = "^showInt numParams);
+    print ("Labels *are* being set to 0 for <50k and 1 for greater, and the database has been pruned based on beta.");
+    print ("Theta output is only showing the selected parameters from beta.");
+    theta = listToVector[num] (replicate[num] numParams 0.0);
+    gradient eps (eta/dbsize) theta numIters
+}}}
+main
+

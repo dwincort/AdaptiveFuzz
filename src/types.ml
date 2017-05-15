@@ -40,6 +40,9 @@ type binder_info = {
 type ('a,'b) result = | Ok of 'a
                       | Error of 'b
 
+type ('a,'b) either = | Left  of 'a
+                      | Right of 'b
+  
 type epsilon = float
 type delta = float
 type ed = (epsilon * delta)
@@ -165,7 +168,7 @@ and  primfun = PrimFun of (term -> term interpreter)
     - the database,
     - its budget, 
     - the currently calculated remaining budget, and
-    - the list of red zone computation sensitivities so far performed. *)
+    - the list of data zone computation sensitivities so far performed. *)
 and  dbdata = (term * ed * ed * ed list)
 
 (* Contexts for parsing and type checking *)

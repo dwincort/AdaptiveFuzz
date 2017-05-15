@@ -91,7 +91,7 @@ function generateDecisionTreeHelper
   }
 
 
-// This green zone function calls chooseBestTree until a desired metric 
+// This adaptive zone function calls chooseBestTree until a desired metric 
 // is reached.
 function generateDecisionTree
   (k : int)

@@ -1,0 +1,52 @@
+import "lib/primitives.fz"
+
+// A left fold over vectors.
+primitive vfoldl forall(A,B) (f : (B -> A -> B)) (ac : B) (v : A vector) : B { "vfoldl" }
+
+// Maps over vectors, both insensitive and sensitive.
+primitive vmap  forall (A,B) (f : A -> B) (a : A vector)   : B vector { "vmap" }
+primitive vsmap forall (A,B) (s : num) (f :[] A -o[[s]] B) (a :[[s]] A vector) : B vector { "vsmap" }
+
+// A filter over vectors.
+primitive vfilter forall (A) (f : A -> bool) (a : A vector) : A vector { "vfilter" }
+
+// A fast primitive for finding the size of a vector.
+// (When run compiled, this is constant time as opposed to a fold with sum, which is linear.)
+primitive vsize forall(A) (b :[] A vector) : int { "vsize" }
+
+// A zip function for vectors, both insensitive and sensitive.
+primitive vzipwith forall(A,B,C) (f : A -> B -> C) (v1 : A vector) (v2 : B vector) : C vector { "vzipwith" }
+primitive vszipwith forall(A,B,C) (s1 : num) (s2 : num) (f :[] A -o[[s1]] B -o[[s2]] C) (v1 :[[s1]] A vector) (v2 :[[s2]] B vector) : C vector { "vszipwith" }
+
+// Indexing into the vector.
+primitive vindex forall(A) (def :[] A) (i : int) (v :[] A vector) : A { "vindex" }
+
+// Performs the given function at the n'th element of the vector and returns a
+// new vector with the single change.
+primitive vperformAt forall(A) (n : int) (f :[] A -o A) (v :[] A vector) : A vector { "vperformAt" }
+
+// Uses monadic binding to convert a vector of fuzzy values into a fuzzy vector of values.
+primitive vfuzz forall(A) (v :[] (fuzzy A) vector) : fuzzy (A vector) { "vfuzz" }
+
+// Shows the vector.
+primitive showVec forall(A) (showA : A -> string) (v : A vector) : string { "showVec" }
+
+/*
+ * The vcons and vuncons functions allow list like manipulation of vectors, but they
+ * should be avoided when possible because they take time linear in the size of the
+ * vector (rather than constant).
+ */
+primitive vcons forall(A) (x :[] A) (v :[] A vector) : (A vector) { "vcons" }
+
+primitive vuncons forall(A) (v :[] A vector) : (() + (A, A vector)) { "vuncons" }
+
+// Sums the elements of the vector.
+function vsum (b : num vector) : num
+    { vfoldl[num][num] op_add 0 b }
+
+// Returns the inner product of two vectors.
+function vectorIP (v1 : num vector) (v2 : num vector) : num
+    { vsum (vzipwith[num][num][num] op_mul v1 v2) }
+
+
+()

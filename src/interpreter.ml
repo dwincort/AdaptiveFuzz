@@ -100,7 +100,7 @@ module InterpMonad = struct
       | Some l -> if l <= 0 then (db, Some l, Error "Partial Evaluation Limit reached")
                             else (db, Some (l-1), Ok ())
   
-  let attemptRedZone (sens : epsilon) : bool interpreter =
+  let attemptDataZone (sens : epsilon) : bool interpreter =
     fun (o, pe, _) -> match o with
       | None -> (o, pe, Error "**Interpreter** Tried to store a sensitivity when no DB was loaded")
       | Some (db, budget, _, silist) -> begin
@@ -117,7 +117,7 @@ module InterpMonad = struct
   
   let storeDB (db : term) (budget : ed) : unit interpreter = 
     fun (db_init, pe, _) -> if Option.is_some pe
-      then begin interp_messageNoFi 1 "Trying to storeDB in red zone.  Quietly skipping ...";
+      then begin interp_messageNoFi 1 "Trying to storeDB in data zone.  Quietly skipping ...";
                  (db_init, pe, Ok ())
       end else (Some (db, budget, budget, []), pe, Ok ())
   

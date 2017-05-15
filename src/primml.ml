@@ -81,10 +81,10 @@ let _abs = ( abs_float )
 let cswp = (fun (x,y) -> if x < y then (x,y) else (y,x))
 
 (* Integer primitives *)
-let _iadd = ( + )
-let _isub = ( - )
-let _imul = ( * )
-let _idiv = ( / )
+let _iadd = ( +. )
+let _isub = ( -. )
+let _imul = ( *. )
+let _idiv = ( /. )
 let rec intToPeano n = if n <= 0.0 then Obj.magic (Left ()) else Obj.magic (Right (intToPeano (n -. 1.0)))
 let rec peanoToInt x = match Obj.magic x with
         | Left () -> 0.
@@ -99,9 +99,18 @@ let string_cc = (^)
 
 (* Show functions *)
 let showNum = fun n -> if n = floor n then string_of_int (truncate n) else string_of_float n
-let showInt = string_of_int
+let showInt n = string_of_int (truncate n)
 let showBag (b : 'a list) (showA : 'a -> string) : string = String.concat "," (List.rev (List.rev_map showA b))
 let showVec (v : 'a array) (showA : 'a -> string) : string = "[" ^ (Array.fold_right (fun x -> fun xs -> showA x ^ "," ^ xs) v "]")
+
+(* Read functions *)
+let readNum s = try
+    float_of_string s
+  with Failure s -> 0.
+
+let readInt s = try
+    int_of_string s
+  with Failure s -> 0
 
 (* Vector and list transform
    "List" represents the fuzz list, which is a magic'd tuple
@@ -117,20 +126,20 @@ let listToVector lst = Array.of_list (listToInternalList lst)
 let vectorToList v = internalListToList (Array.to_list v)
 
 (* Testing Utilities *)
-let _assert  _ = failwith "assert not available in Red Zone"
-let assertEq _ = failwith "assertEq not available in Red Zone"
-let print    s = (*failwith "print not available in Red Zone"*)  Printf.eprintf "%s\n" s 
+let _assert  _ = failwith "assert not available in Data Zone"
+let assertEq _ = failwith "assertEq not available in Data Zone"
+let print    s = (*failwith "print not available in Data Zone"*)  Printf.eprintf "%s\n" s 
 
 (* Probability monad operations *)
 let _return (x : 'a) : unit -> 'a = fun _ -> x
-let loadDB _ = failwith "loadDB not available in Red Zone"
+let loadDB _ = failwith "loadDB not available in Data Zone"
 
-(* Red zone activation primitives *)
-let tyCheckFuzz _ = failwith "tyCheckFuzz not available in Red Zone"
-let runRedZone  _ = failwith "runRedZone not available in Red Zone"
+(* Data zone activation primitives *)
+let tyCheckFuzz _ = failwith "tyCheckFuzz not available in Data Zone"
+let runFuzz     _ = failwith "runFuzz not available in Data Zone"
 
-let getDelta   _ = failwith "getDelta not available in Red Zone"
-let getEpsilon _ = failwith "getEpsilon not available in Red Zone"
+let getDelta   _ = failwith "getDelta not available in Data Zone"
+let getEpsilon _ = failwith "getEpsilon not available in Data Zone"
 
 (* Bag primitives *)
 let emptybag = []
@@ -153,6 +162,8 @@ let bagsumV n b =
     in List.iter sumUp b; res
 
 let bagsplit f b = List.partition
+
+let bagfoldl = List.fold_left
 
 (* Differential Privacy mechanisms *)
 let addNoiseP (eps : float) (n : float) : float = n +. Math.lap (1.0 /. eps)
@@ -190,7 +201,7 @@ let aboveThresholdP (eps : float) (k : float) (t : float) (db : 'db) : int =
 let aboveThreshold (eps : float) (k : float) (t : float) (db : 'db) : unit -> int = 
   fun () -> aboveThresholdP eps k t db
 
-let queryAT (token : int) (f : 'db -> float) : bool option =
+let queryAT (token : int) (f : 'db -> float) : (unit, bool) either =
   let dbopt = begin match List.nth (!curatormem) token with
             | None -> None
             | Some (t,e,_, Some (Any db)) -> Some (t,e,Obj.magic db)
@@ -199,20 +210,26 @@ let queryAT (token : int) (f : 'db -> float) : bool option =
                 let db = Marshal.from_channel ic in
                 close_in ic;
                 Some (t,e,db)
-  end in Option.map (fun (t,e,db) ->
+  end in Option.map_default (fun (t,e,db) ->
     if (f db) +. Math.lap (4.0 /. e) >= t then
-      (curatormem := updateNth !curatormem token (fun _ -> None); true)
-    else false) dbopt
+      (curatormem := updateNth !curatormem token (fun _ -> None); Right true)
+    else Right false) (Left ()) dbopt
 
-      
+let select = Math.sampleList
+
 
 (* Load data from external file *)
-let bagFromFile     _ = failwith "bagFromFile not available in Red Zone"
-let listFromFile    _ = failwith "listFromFile not available in Red Zone"
-let listbagFromFile _ = failwith "listbagFromFile not available in Red Zone"
+let bagFromFile     _ = failwith "bagFromFile not available in Data Zone"
+let listFromFile    _ = failwith "listFromFile not available in Data Zone"
+let listbagFromFile _ = failwith "listbagFromFile not available in Data Zone"
 let vectorbagFromFile (maxsize : float) (fn : string) (rexp : string) : (float array) list = 
     let lines = fileLines (truncate maxsize) fn in
     let lineFun line = Array.of_list (List.map stringToFloat (Str.split (Str.regexp rexp) line))
+    in List.rev_map lineFun lines
+
+let labeledVectorbagFromFile (maxsize : float) (fn : string) (rexp : string) : (float * float array) list = 
+    let lines = fileLines (truncate maxsize) fn in
+    let lineFun line = (let flst = List.map stringToFloat (Str.split (Str.regexp rexp) line) in (List.hd flst, Array.of_list (List.tl flst)))
     in List.rev_map lineFun lines
 
 let readCmemFromFile (maxsize : int) (fn : string) : curatorMemory =
@@ -235,7 +252,8 @@ let writeCmemToFile (fn : string) (cmem : curatorMemory) : unit =
 (* Vectors *)
 let vsize v = float_of_int (Array.length v)
 let vmap = Array.map
-let vsum = Array.fold_left (+.) 0.0
+let vsmap _ = vmap
+(* let vsum = Array.fold_left (+.) 0.0 *)
 let vcons (x : 'a) (xs : 'a array) : 'a array = Array.of_list (x::(Array.to_list xs))
 let vuncons (v : 'a array) : (unit, 'a * 'a array) either = 
   match Array.to_list v with
@@ -254,17 +272,21 @@ let vperformAt (i : float) (f : 'a -> 'b) (v : 'a array) : 'b array =
     Array.set res i (f v.(i)); res
   with Invalid_argument s -> res
 
-let vfilter (test : 'a -> bool) (f : 'a -> 'b) (v : 'a array) : 'b array =
+let vfilter (test : 'a -> bool) (v : 'a array) : 'a array =
   let rec lfilter lst = match lst with
     | [] -> []
-    | x::xs -> if test x then f x :: lfilter xs else lfilter xs
+    | x::xs -> if test x then x :: lfilter xs else lfilter xs
   in Array.of_list (lfilter (Array.to_list v))
 
 let vzipwith (f : 'a -> 'b -> 'c) (v1 : 'a array) (v2 : 'b array) : 'c array =
   let l = min (Array.length v1) (Array.length v2)
   in Array.init l (fun i -> f v1.(i) v2.(i))
-  
+let vszipwith _ _ = vzipwith
 
+let vfuzz (v : (unit -> 'a) array) : unit -> ('a array) =
+  fun () -> Array.map (fun f -> f ()) v
+
+let vfoldl = Array.fold_left
 
 let vectorIP  (v1 : float array) (v2 : float array) : float = 
   let res = ref 0.0 in

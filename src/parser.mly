@@ -11,6 +11,8 @@ open Syntax
 
 open Support.FileInfo
 
+let curr_ctx = ref Ctx.empty_context
+
 let parser_error   fi = Support.Error.error_msg   Support.Options.Parser fi
 let parser_warning fi = Support.Error.message   1 Support.Options.Parser fi
 let parser_info    fi = Support.Error.message   2 Support.Options.Parser fi
@@ -41,7 +43,7 @@ let dummyTy = TyPrim PrimUnit
 (* Wrap extend here in order to avoid mutually recursive
    dependencies *)
 (* TODO: Do these really need to be wrapped?
-   More importantly, let's use the non-primed version of these Ctx 
+   More importantly, let's use the non-primed version of these Ctx
    functions and get the sizes right in the binders (see below). *)
 let extend_var id ctx =
   Ctx.extend_ctx_with_var' id dummyTy ctx
@@ -79,20 +81,20 @@ let rec list_to_term l body = match l with
 let from_args_to_term qf arg_list body =
   qf_to_term qf (list_to_term arg_list body)
 
-let mkNewVarsInType ty ctx = 
+let mkNewVarsInType ty ctx =
   let f k i v = TmVar(i, var_shift 0 k (existing_var i v.v_name ctx)) in
   ty_mapTm f 0 ty
 
-let mkNewVarsInSi si ctx = 
+let mkNewVarsInSi si ctx =
   let f k i v = TmVar(i, var_shift 0 k (existing_var i v.v_name ctx)) in
   si_mapTm f 0 si
 
-(* When we're making this list for primFuns, the type may have terms in it (e.g. 
-   SiTerms).  They must be appropriately indexed, so we remake them with the 
+(* When we're making this list for primFuns, the type may have terms in it (e.g.
+   SiTerms).  They must be appropriately indexed, so we remake them with the
    current (potentially extended) context.  We do this with mkNewVarsInType. *)
 let rec args_to_args_list fi arg_list ctx = match arg_list with
   | []      -> []
-  | (ty, si, n, i) :: arg_list' -> (TmVar(fi, existing_var fi n ctx), mkNewVarsInType ty ctx, mkNewVarsInSi si ctx) 
+  | (ty, si, n, i) :: arg_list' -> (TmVar(fi, existing_var fi n ctx), mkNewVarsInType ty ctx, mkNewVarsInSi si ctx)
                                  :: args_to_args_list fi arg_list' ctx
 
 let mk_infix ctx info op t1 t2 =
@@ -125,21 +127,6 @@ let rec remove_quantifiers ty = match ty with
     TyForall(_,ty_i) -> remove_quantifiers ty_i
   | _ -> ty
 
-(* Find the hole, which is the unit value at the bottom of the file, and replace
-   it with the supplied term *)
-let rec prepend_import import tm =
-      match import with
-       | TmPrim (_, PrimTUnit) -> tm
-       | TmStmt (i, expr, next_tm) -> TmStmt (i, expr, prepend_import next_tm tm)
-       | TmLet  (i, b, si, tm1, next_tm) ->
-                TmLet (i, b, si, tm1, prepend_import next_tm tm)
-       | TmTensDest(i, b1, b2, tm1, next_tm) ->
-                TmTensDest(i, b1, b2, tm1, prepend_import next_tm tm)
-       | TmSample(i, b, e, next_tm) ->
-       	 	TmSample(i, b, e, prepend_import next_tm tm)
-       | TmTypedef(i, b, ty, next_tm) ->
-       	 	TmTypedef(i, b, ty, prepend_import next_tm tm)
-       | _ -> tm (*parser_error dummyinfo "Found import at the wrong place."*)
 
 %}
 
@@ -223,7 +210,7 @@ let rec prepend_import import tm =
 %token <string Support.FileInfo.withinfo> STRINGV
 
 /* Token for included program */
-%token <(Types.term * Types.context) Support.FileInfo.withinfo> IMPORT
+/* %token <(Types.term * Types.context) Support.FileInfo.withinfo> IMPORT */
 
 
 /* ---------------------------------------------------------------------- */
@@ -239,29 +226,10 @@ let rec prepend_import import tm =
 /* ---------------------------------------------------------------------- */
 
 body :
-  Imports Term EOF
-      { let imports = List.map (fun item -> item.v) $1 in
-      	let imported_tms  = List.map fst imports       in
-	let imported_ctxs = List.map snd imports       in
-	let initial_ctx   = List.fold_left Ctx.merge_ctx
-	    		    		   Ctx.empty_context
-					   imported_ctxs in
-	let (term, final_ctx) = $2 initial_ctx           in
-	let final_term = List.fold_right prepend_import imported_tms term in
-	(*
-	List.map (fun item -> Format.print_string ((fst item).v_name ^ "\n"))
-		 initial_ctx.var_ctx;
-        Format.print_int (List.length initial_ctx.var_ctx);
-	Format.print_string "\n";
-	*)
-        (final_term, final_ctx)
+   Term EOF
+      {
+        $1 Ctx.empty_context
       }
-
-Imports :
-  /* Nothing */
-    { [] }
-  | IMPORT Imports
-    { $1 :: $2 }
 
 PrimSpec :
     STRINGV
@@ -276,7 +244,7 @@ Term :
       {
         fun ctx ->
           let ctx' = extend_var $1.v ctx        in
-	  let (tm, next_ctx) = $6 ctx'          in
+          let (tm, next_ctx) = $6 ctx'          in
           (TmLet($1.i, (nb_var $1.v), $2 ctx, $4 ctx, tm), next_ctx)
       }
   | LET LPAREN ID COMMA ID RPAREN EQUAL Expr SEMI Term
@@ -292,14 +260,14 @@ Term :
   | SAMPLE ID EQUAL Expr SEMI Term
       { fun ctx ->
         let ctx' = extend_var $2.v ctx        in
-      	let (tm, next_ctx) = $6 ctx'          in
+        let (tm, next_ctx) = $6 ctx'          in
         (TmSample ($2.i, (nb_var $2.v), $4 ctx, tm), next_ctx)
       }
   | TYPEDEF ID EQUAL Type SEMI Term
       {
         fun ctx ->
         let ctx_let = extend_ty_var $2.v ctx in
-	let (tm, next_ctx) = $6 ctx_let      in
+        let (tm, next_ctx) = $6 ctx_let      in
         (TmTypedef($1, (nb_tyvar $2.v), $4 ctx_let, tm), next_ctx)
       }
   | PRIMITIVE ID Quantifiers Arguments COLON Type LBRACE PrimSpec RBRACE Term
@@ -312,7 +280,7 @@ Term :
         let pf               = lookup_prim ($8.i) pn                        in
         let body             = TmPrimFun($8.i, pn, pf, $6 ctx_args, arglst) in
         let f_term           = from_args_to_term qf args body               in
-	let (next_tm, next_ctx)     = $10 ctx_let			    in
+        let (next_tm, next_ctx)     = $10 ctx_let                           in
 
         (TmLet($1, nb_prim $2.v, si_infty, f_term, next_tm), next_ctx)
       }
@@ -325,7 +293,7 @@ Term :
         let f_type           = from_args_to_type qf args ($6 ctx_args) in
         let f_term           = from_args_to_term qf args (fst ($8 ctx_args)) in
         let recfun           = TmRecFun ($2.i, nb_var $2.v, f_type, f_term, false) in
-	let (next_tm, next_ctx) = $10 ctx_let  	      	  in
+        let (next_tm, next_ctx) = $10 ctx_let             in
         (TmLet($2.i, nb_var $2.v, si_infty, recfun, next_tm), next_ctx)
       }
   | LogOrTerm
@@ -529,8 +497,8 @@ MaybeType:
 TypeApp :
     LPAREN Type RPAREN LBRACK Type RBRACK
     { fun ctx -> let ty_abs  = $2 ctx in
-      	      	 let ty_body = $5 ctx in
-		 TyTyApp(ty_abs, ty_body)
+                 let ty_body = $5 ctx in
+                 TyTyApp(ty_abs, ty_body)
     }
   | ID LBRACK Type RBRACK
     { fun ctx ->
@@ -539,8 +507,8 @@ TypeApp :
     }
   | TypeApp LBRACK Type RBRACK
     { fun ctx -> let ty_abs  = $1 ctx in
-      	         let ty_body = $3 ctx in
-		 TyTyApp(ty_abs, ty_body)
+                 let ty_body = $3 ctx in
+                 TyTyApp(ty_abs, ty_body)
     }
 
 Type :
@@ -571,8 +539,8 @@ ComplexType :
   | Quantifiers DOT Type
       { fun ctx ->
         (* qf is of type [(Support.FileInfo.info, string)] *)
-      	let (qf, qf_ctx) = $1 ctx    in
-	let ty_body = $3 qf_ctx in
+        let (qf, qf_ctx) = $1 ctx    in
+        let ty_body = $3 qf_ctx in
         qf_to_type qf ty_body
       }
 

@@ -66,8 +66,10 @@ module FileInfo = struct
 
   let pp_fileinfo ppf = function
     | FI(f,l,c) -> let f_l = String.length f   in
-                   let f_t = min f_l 12        in
-                   let f_s = max 0 (f_l - f_t) in
+                   let f_s = try 1+(String.rindex f '/') with Not_found -> 0 in
+                   let f_t = max 0 (f_l - f_s) in
+                   (* let f_t = min f_l 12        in *)
+                   (* let f_s = max 0 (f_l - f_t) in *)
                    let short_file = String.sub f f_s f_t in
                    Format.fprintf ppf "(%s:%02d.%02d)" short_file l c
     | UNKNOWN   -> Format.fprintf ppf ""

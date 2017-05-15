@@ -496,17 +496,17 @@ open TypeCheckMonad
 
 let reportSensitivity (fi : info) (bi : binder_info) (si : si) : si checker =
   should_check_sens (return si) @@
-  si_simpl si >>= fun si ->
-  Support.Error.message 7 Support.Options.TypeChecker fi
+  (si_simpl si >>= fun si ->
+  Support.Error.message 5 Support.Options.TypeChecker fi
     "### Inferred sensitivity for binder @[%a@] is @[%a@]" pp_binfo bi pp_si si;
-  return si
+  return si)
 
 let reportSensitivityT (fi : info) (tm : term) (si : si) : si checker =
   should_check_sens (return si) @@
-  si_simpl si >>= fun si ->
-  Support.Error.message 7 Support.Options.TypeChecker fi
+  (si_simpl si >>= fun si ->
+  Support.Error.message 5 Support.Options.TypeChecker fi
     "### Inferred sensitivity for primfun term @[%a@] is @[%a@]" pp_term tm pp_si si;
-  return si
+  return si)
 
 
 let type_of_prim (t : term_prim) : ty = match t with

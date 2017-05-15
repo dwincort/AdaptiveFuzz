@@ -3,7 +3,7 @@
 
 import "library-bags.fz"
 
-bdat = listbagFromFile[num] 100 "examples/data/baglist1.dat" "[ \\t]+";
+bdat = listbagFromFile[num] 100 "tests/data/baglist1.dat" "[ \\t]+";
 
 assertEq[num]      "Bags #1 " (bagsize[list[num]] bdat) 6;
 assertEq[string]   "Bags #2 "

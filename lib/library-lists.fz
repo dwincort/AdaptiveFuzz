@@ -3,64 +3,14 @@ import "lib/primitives.fz"
 /* Polymorphic list type */
 typedef list = forall (A) . (mu XX => (() + (A, XX)));
 
+// List constructors.
 function nil forall(A) : list[A] {
     fold[list[A]] (inl[()][(A,list[A])]{()}) }
 
 function cons forall(A) (hd :[] A) (tl :[] list[A]) : list[A] {
     fold[list[A]] (inr[()][(A,list[A])]{(hd,tl)}) }
 
-// map : (X -> Y) -> list(X) -> list(Y)
-function list_map forall(X, Y) (f : X -> Y) (lm : list[X]) : list[Y] {
-  case unfold lm of {
-      inl(x) => nil[Y]
-    | inr(x) => let (h,t) = x;
-                cons[Y] (f h) (list_map[X][Y] f t)
-  }
-}
-
-// // lmap : (X -o Y) -> list(X) -o list(Y)
-// function list_lmap forall (X, Y) (s : num) (f : X -o[[s]] Y) (l :[[s]] list(X)) : list(Y) {
-//   case unfold l of {
-//       inl(_) => nil[Y]
-//     | inr(x) => let (h,t) = x;
-//                 cons[Y] (f h) (list_lmap[X][Y] s f t)
-//   }
-// }
-
-// lmap : (X -o Y) -> list(X) -o list(Y)
-function list_lmap forall (X, Y) (s : num) (f : X -o[[s]] Y) (l :[[s]] list[X]) : list[Y] {
-  function inner (lst :[[s]] list[X]) : list[Y] {
-    case unfold lst of {
-        inl(_) => nil[Y]
-      | inr(x) => let (h,t) = x;
-                  cons[Y] (f h) (inner t)
-    }
-  }
-  inner l
-}
-
-// fold : (B -o (A ->  B)) -> B -o list(A) -> B
-function list_foldl forall (A, B) (f : (B -o A -o B)) (ac :[] B) (il : list[A]) : B {
-  case unfold il of {
-     inl(y) => ac
-   | inr(y) => let (elem,rest) = y;
-               list_foldl[A][B] f (f ac elem) rest
-  }
-}
-
-// lfold : (B -o (A -o  B)) -> B -o list(A) -> B
-function list_lfoldl forall (A, B) (f : (B -o (A -o B))) (ac :[] B) (il :[] list[A]) : B {
-  case unfold il of {
-     inl(y) => ac
-   | inr(y) => let (elem,rest) = y;
-               list_lfoldl[A][B] f (f ac elem) rest
-  }
-}
-
-// length : list(A) -> int
-function length forall (A) (l :[] list[A]) : int {
-  list_lfoldl[A][int] (fun (n :[] int) { fun (l :[] A ) { n +. 1 } }) 0 l
-}
+// List destructors.
 
 // head : A -o list(A) -o A
 // Returns the head of the list or the default argument.
@@ -72,7 +22,7 @@ function head forall (A) (def :[] A) (lst :[] list[A]) : A {
   }
 }
 
-// tail : list(A) -> list(A)
+// tail : list(A) -o list(A)
 // Returns an empty list when given an empty list.
 function tail forall (A)  (il :[] list[A]) : list[A] {
   case unfold il of {
@@ -82,17 +32,57 @@ function tail forall (A)  (il :[] list[A]) : list[A] {
   }
 }
 
-// uncons : A -o list(A) -o (A, list(A))
-// Returns the head of the list or the default argument.
-function uncons forall (A) (def :[] A) (lst :[] list[A]) : (A, list[A]) {
-  case unfold lst of {
-     inl(_)   => (def, nil[A])
-   | inr(xxs) => xxs
+
+
+// Insensitive and sensitive list maps.
+function list_map forall(X, Y) (f : X -> Y) (lm : list[X]) : list[Y] {
+  case unfold lm of {
+      inl(x) => nil[Y]
+    | inr(x) => let (h,t) = x;
+                cons[Y] (f h) (list_map[X][Y] f t)
   }
 }
 
-function performAt forall(A) (n :[] int) (f : A -o A) (l :[] list[A]) : list[A] {
-  function inner (n :[] (mu X => (() + X))) (l :[] list[A]) : list[A] {
+function list_smap forall (X, Y) (s : num) (f :[] X -o[[s]] Y) (l :[[s]] list[X]) : list[Y] {
+  function inner (lst :[[s]] list[X]) : list[Y] {
+    case unfold lst of {
+        inl(_) => nil[Y]
+      | inr(x) => let (h,t) = x;
+                  cons[Y] (f h) (inner t)
+    }
+  }
+  inner l
+}
+
+// Sensitive and insensitive list folds.
+function list_foldl forall (A, B) (f : (B -> A -> B)) (ac : B) (il : list[A]) : B {
+  case unfold il of {
+     inl(y) => ac
+   | inr(y) => let (elem,rest) = y;
+               list_foldl[A][B] f (f ac elem) rest
+  }
+}
+
+function list_sfoldl forall (A, B) (s1 : num) (s2 : num) (f : (B -o[[s1]] A -o[[s2]] B)) (ac :[[s1]] B) (il :[[s2]] list[A]) : B {
+  function inner (ac :[[s1]] B) (il :[[s2]] list[A]) : B {
+    case unfold il of {
+       inl(y) => ac
+     | inr(y) => let (elem,rest) = y;
+                 inner (f ac elem) rest
+    }}
+  inner ac il
+}
+
+// List length.
+function length forall (A) (l :[] list[A]) : int {
+  list_sfoldl[A][int] 1 1 (fun (n :[] int) { fun (l :[] A ) { n +. 1 } }) 0 l
+}
+
+// Sensitive and insensitive functions that take an index, a function, and a
+// list and return a new list with the element at the given index updated
+// by the given function.
+function list_sperformAt forall(A) (s : num) (n :[] int) (f : A -o[[s]] A) (l :[[s]] list[A]) : list[A] {
+  function inner (n :[] (mu X => (() + X))) (l :[[s]] list[A]) : list[A] {
     case unfold l of {
       inl(_)   => nil[A]
     | inr(xxs) => let (x,xs) = xxs;
@@ -105,22 +95,16 @@ function performAt forall(A) (n :[] int) (f : A -o A) (l :[] list[A]) : list[A] 
   inner (intToPeano n) l
 }
 
-
-function zipWithS forall(A,B,C) (sens : num) (f : A -o[[sens]] B -o[[sens]] C) (l1 :[[sens]] list[A]) (l2 :[[sens]] list[B]) : list[C] {
-  function inner (l1i :[[sens]] list[A]) (l2i :[[sens]] list[B]) : list[C] {
-    case unfold l1i of {
-      inl(x) => nil[C]
-    | inr(x) => case unfold l2i of {
-                  inl(y) => nil[C]
-                | inr(y) => let (xh,xt) = x; let (yh,yt) = y;
-                            cons[C] (f xh yh) (inner xt yt)
-                }
-      }
+function list_performAt forall(A) (n : int) (f : A -> A) (l : list[A]) : list[A] {
+  case unfold l of {
+    inl(_)   => nil[A]
+  | inr(xxs) => let (x,xs) = xxs;
+                if n == 0 then { cons[A] (f x) xs } else { cons[A] x (list_performAt[A] (n -. 1) f xs) }
   }
-  inner l1 l2
 }
 
-function zipWithSS forall(A,B,C) (s1 : num) (s2 : num) (f : A -o[[s1]] B -o[[s2]] C) : list[A] -o[[s1]] list[B] -o[[s2]] list[C] {
+// Sensitive and insensitive zip functions.
+function list_szipWith forall(A,B,C) (s1 : num) (s2 : num) (f : A -o[[s1]] B -o[[s2]] C) : list[A] -o[[s1]] list[B] -o[[s2]] list[C] {
   function inner (l1 :[[s1]] list[A]) (l2 :[[s2]] list[B]) : list[C] {
     case unfold l1 of {
       inl(x) => nil[C]
@@ -134,13 +118,13 @@ function zipWithSS forall(A,B,C) (s1 : num) (s2 : num) (f : A -o[[s1]] B -o[[s2]
   inner
 }
 
-function zipWith forall(A,B,C) (f : A -o B -o C) (l1 :[] list[A]) (l2 :[] list[B]) : list[C] {
+function list_zipWith forall(A,B,C) (f : A -> B -> C) (l1 : list[A]) (l2 : list[B]) : list[C] {
   case unfold l1 of {
     inl(x) => nil[C]
   | inr(x) => case unfold l2 of {
                 inl(y) => nil[C]
               | inr(y) => let (xh,xt) = x; let (yh,yt) = y;
-                          cons[C] (f xh yh) (zipWith[A][B][C] f xt yt)
+                          cons[C] (f xh yh) (list_zipWith[A][B][C] f xt yt)
               }
     }
 }
@@ -149,19 +133,14 @@ function zipWith forall(A,B,C) (f : A -o B -o C) (l1 :[] list[A]) (l2 :[] list[B
 // zip [1,2,3] ["a","b","c"] = [(1,"a"),(2,"b"),(3,"c")]
 // zip [1,2] [9,8,7,6,5,4,3] = [(1,9),(2,8)]
 // zip [9,8,7,6,5,4,3] [1,2] = [(9,1),(8,2)]
-function zip forall(A,B) (l1 :[] list[A]) (l2 :[] list[B]) : list[(A,B)] {
-  function pair (a :[] A) (b :[] B) : (A,B) { (a,b) }
-  zipWith[A][B][(A,B)] pair l1 l2
+function list_zip forall(A,B) (l1 :[] list[A]) (l2 :[] list[B]) : list[(A,B)] {
+  list_szipWith[A][B][(A,B)] 1 1 pair[A][B] l1 l2
 }
 
 
 // A function to append two lists.
 // list_append : list(A) -o list(A) -o list(A)
-function list_append
-  forall(A)
-  (l1 :[] list[A])
-  (l2 :[] list[A]) : list[A]
-{
+function list_append forall(A) (l1 :[] list[A]) (l2 :[] list[A]) : list[A] {
   case (unfold l1) of {
     inl(unit) => l2
   | inr(l) => let (h,t) = l;
@@ -171,10 +150,7 @@ function list_append
 
 // A function to concatenate a list of lists.
 // list_concat list(list(A)) -o list(A)
-function list_concat
-  forall(A)
-  (lsts :[] list[list[A]]) : list[A]
-{
+function list_concat forall(A) (lsts :[] list[list[A]]) : list[A] {
   case (unfold lsts) of {
     inl(unit) => nil[A]
   | inr(p) => let (l1, lsts') = p;
@@ -196,7 +172,7 @@ function remove
                    if (x == elem) then { xs }
                                   else { cons[A] x ((remove[A] elem xs)) }
     }
-  }
+}
 
 // An indexing function for lists.
 function index
@@ -212,34 +188,24 @@ function index
     }
 }
 
+// Returns the first n elements of the list as a new list.
 function take
   forall(A)
-  (ind : int)
+  (n : int)
   (lst :[] list[A])
   : list[A] {
-    if (ind == 0) then { nil[A] } else {
+    if (n == 0) then { nil[A] } else {
       case (unfold lst) of {
         inl(_)   => nil[A]
       | inr(xxs) => let (x,xs) = xxs;
-                    cons x (take[A] (ind -. 1) xs)
+                    cons x (take[A] (n -. 1) xs)
       }
     }
 }
 
-function vectorMap
-  forall(A,B)
-  (s : num)
-  (k : int)
-  (def : A)
-  (f :[[k]] A -o[[s]] B)
-  (l :[[max (s,k)]] list[A])
-  : list[B] {
-    if k <= 0 then {
-      nil[B]
-    } else {
-      let (x,xs) = uncons[A] def l;
-      cons[B] (f x) (vectorMap[A][B] s (k -. 1) def f xs)
-    }
+// Creates a list of length n with the value x for every entry.
+function replicate forall(A) (n : int) (x : A) : list[A] {
+  if n <= 0 then { nil[A] } else { cons[A] x (replicate[A] (n -. 1) x) }
 }
 
 
@@ -272,29 +238,9 @@ function vectorMap
 //   }
 // }
 
-////////////////////////////////////////////////////////////////
-/* Monadic lists over the probability monad */
 
-typedef flist  = forall (A) . mu X => (() + (fuzzy A, X));
-typedef finner = forall (A) . () + (fuzzy A, flist[A]);
-
-function fnil forall (A) : flist[A] {
-  fold[flist[A]] (inl[()][(fuzzy A, flist[A])]{()})
-}
-
-function fcons forall (A) (f :[] fuzzy A) (fs :[] flist[A]) : flist[A] {
-  fold[flist[A]] (inr[()][(fuzzy A, flist[A])]{(f, fs)})
-}
-
-/*
-#define flist(A)     (mu X => (() + (fuzzy A, X)))
-#define finner(A)    (() + (fuzzy A, flist(A)))
-#define fnil(A)      (fold[flist(A)] (inl{()}))
-#define fcons(A,a,b) (fold[flist(A)] (inr{(a, b)}))
-*/
-
-// listfuzz : flist(A) -o fuzzy list(A) [like mapM]
-function listfuzz forall(A) (fl :[] flist[A]) : fuzzy list[A] {
+// listfuzz : list(fuzzy A) -o fuzzy list(A) [like mapM]
+function listfuzz forall(A) (fl :[] list[fuzzy A]) : fuzzy list[A] {
   case unfold fl of {
       inl(_) => return nil[A]
     | inr(ht) =>
@@ -305,6 +251,7 @@ function listfuzz forall(A) (fl :[] flist[A]) : fuzzy list[A] {
   }
 }
 
+// Show the given list, using the provided function to show the elements.
 function showList 
   forall(A) 
   (pA : A -> string) 
@@ -325,11 +272,13 @@ function showList
 }
 
 /*
-  listFromFile : string -> list(DATA)
-  
-  Given a file name, loads the data in the file into a list
+  The listFromFile function reads the data from the file.
+  Each line of the file corresponds to each element of the list.
+  NOTE: This function only works when Adaptive Fuzz is run with the --no-compiler flag.
 */
 primitive listFromFile forall(DATA) (maxLen : int) (file : string) : list[DATA] { "listFromFile" }
+
+// Primitives for converting between the list and vector types.
 primitive listToVector forall(A) (l :[] list[A]) : A vector { "listToVector" }
 primitive vectorToList forall(A) (v :[] A vector) : list[A] { "vectorToList" }
 

@@ -1,17 +1,10 @@
-// We use lists in bagpartition
-import "lib/library-lists.fz"
-
 /*
-
-  Most functions dealing with bags are built-in in Fuzz.
-
-  Here we recall their type signatures and their use. For a precise
-  definition see the ICFP10 paper.
-
+A library of useful bag functions.  Many of them are primitives built into
+Adaptive Fuzz.
 */
 
-//////////////////////////////////////////////////////////////////////
-// Primitives (built-in)
+// We use lists in a number of bag functions
+import "lib/library-lists.fz"
 
 /*
   emptybag : () -> A bag
@@ -46,7 +39,9 @@ primitive showBag forall(A) (showA : A -> string) (b : A bag) : string { "showBa
 /*
   bagFromFile : string -> DATA bag
   
-  Given a file name, loads the data in the file into a bag
+  Given a file name, loads the data in the file into a bag.
+  Each line of the file corresponds to each element of the bag.
+  NOTE: This function only works when Adaptive Fuzz is run with the --no-compiler flag.
 */
 primitive bagFromFile forall(DATA) (maxsize : int) (file : string) : DATA bag { "bagFromFile" }
 
@@ -54,6 +49,9 @@ primitive bagFromFile forall(DATA) (maxsize : int) (file : string) : DATA bag { 
   listbagFromFile : string -> (list(DATA)) bag
   
   Given a file name, loads the data in the file into a bag
+  Each line of the file corresponds to each element of the bag, and each line
+  must be a list of values separable by the given regexp to go into the list.
+  NOTE: This function only works when Adaptive Fuzz is run with the --no-compiler flag.
 */
 primitive listbagFromFile forall(DATA) (maxsize : int) (file : string) (rexp : string) : list[DATA] bag { "listbagFromFile" }
 
@@ -61,8 +59,21 @@ primitive listbagFromFile forall(DATA) (maxsize : int) (file : string) (rexp : s
   vectorbagFromFile : string -> (DATA vector) bag
   
   Given a file name, loads the data in the file into a bag
+  Each line of the file corresponds to each element of the bag, and each line
+  must be a list of values separable by the given regexp to go into the vector.
 */
 primitive vectorbagFromFile (maxsize : int) (file : string) (rexp : string) : (clipped vector) bag { "vectorbagFromFile" }
+
+/*
+  vectorbagFromFile : string -> (DATA vector) bag
+  
+  Given a file name, loads the data in the file into a bag
+  Each line of the file corresponds to each element of the bag, and each line
+  must be a list of values separable by the given regexp to go into the vector.
+  Each line must have at least one element, and the first element is provided
+  as the label.
+*/
+primitive labeledVectorbagFromFile (maxsize : int) (file : string) (rexp : string) : (clipped, clipped vector) bag { "labeledVectorbagFromFile" }
 
 /*
   bagsplit : (A -> bool) -> A bag -o ( A bag x A bag ) 
@@ -101,9 +112,6 @@ primitive bagmap forall (A,B) (f : A -> B) (a :[] A bag) : B bag { "bagmap" }
   Given a bag it returns the number of elements in it.
 */
 primitive bagsize forall(A) (b :[] A bag) : int { "bagsize" }
-// function bagsize forall(A) (b :[] A bag) : int {
-//   bagfoldl[A][int] 1 (fun (acc :[] int) {fun (_ : A) : int {1 +. acc}}) 0 b
-// }
 
 /*
   bagsum : (clipped bag) -o num
@@ -111,10 +119,15 @@ primitive bagsize forall(A) (b :[] A bag) : int { "bagsize" }
   Returns the sum of the elements of the bag.
 */
 primitive bagsum (b :[] clipped bag) : num { "bagsum" }
-// function bagsum (b :[] clipped bag) : num {
-//   bagfoldl[clipped][num] 1 op_add 0 b
-// }
 
+/*
+  bagsumL and bagsumV
+  
+  These functions take a bag of lists/vectors and sum them into a single
+  list/vector.  The first argument specifies the max length of the returned
+  list/vector, so it should probably be set to the size of the input list/vector.
+  
+*/
 primitive bagsumL (n : int) (b :[[n]] (list[clipped]) bag) : list[num] { "bagsumL" }
 primitive bagsumV (n : int) (v :[[n]] (clipped vector) bag) : num vector { "bagsumV" }
 

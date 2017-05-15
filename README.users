@@ -1,17 +1,37 @@
-Using fuzz
+Using Adaptive Fuzz
 ---------------------------------------
 
-You need ocaml >= 4.02, ocamlfind, and ocamlbuild, as well as 
-standard gnu tools like gcc and make.
+You need ocaml >= 4.02, ocamlfind, and ocamlbuild.
 
 From the main directory, do:
 $ make
-to make fuzz.
+to make adaptive fuzz.
 
 
 How to run programs
 ---------------------------------------
+Simply run the main executable with an input program file, as in:
+$ ./fuzz tests/runTests.fz
+To see extra arguments that can be provided, run:
+$ ./fuzz --help
+To provide arguments to the program (which take the form of a vector of 
+strings), append the "-args" flag to the call, followed by the arguments.  
+For instance, the following call runs the vectorized gradient descent 
+example with the arguments 1000, 11, and "data/census-sample.data" (which 
+indicate a database size of 1000, an epsilon of 2^(-11), and the sample 
+database file).
+$ ./fuzz examples/gradient-descent-vector.fz -args 1000 11 
+"data/census-sample.data"
 
-$ ./fuzz examples/runTests.fz
 
+How to write programs
+---------------------------------------
+The accompanying doc/syntax.txt file has a description of the syntax for 
+Adaptive Fuzz.  Built-in primitives can be found in the library files (in 
+the lib/ directory), where they have accompanying type signatures and brief 
+documentation.
 
+Note that all files must terminate with an expression, and for runnable 
+programs, this expression must be of type string.  The convention is that 
+files that are only ever to be imported terminate with unit.  This can be 
+seen in the library files.

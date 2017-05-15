@@ -9,4 +9,4 @@
 open Types
 
 val curatorMemFileName : string ref
-val runCompiled : string -> term -> (string, string) result
+val runCompiled : string -> Support.FileInfo.info -> term -> ty -> (term, string) result

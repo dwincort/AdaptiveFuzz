@@ -1,7 +1,7 @@
 
 
-// Include the bags libraries (lists is included with this).
-import "library-lists.fz"
+import "library-bags.fz"
+import "library-vectors.fz"
 
 /*
 The sensitive data is a matrix.
@@ -25,17 +25,17 @@ function count (start : int) (end : int) : int list {
   }
 }
 
-function matrixMultGreen
+function matrixMult
   (eps : num)
   (numIters : int)
   (v : num vector)
   : num vector {
-    function redfun (i : int) (db :[[eps * (absumV v)]] db) : fuzzy num {
+    function datafun (i : int) (db :[[eps * (absumV v)]] db) : fuzzy num {
       row = vindex[clipped vector] (listToVector[clipped] (nil[clipped])) i db;
       add_noise eps (vectorIP v row)
     }
     function mapfun (i : int) : num {
-      rz = runFuzz[db][num] eps (redfun i)
+      rz = runFuzz[db][num] eps (datafun i)
       case rz of {
         inl(s) => print s; 0
         inr(r) => r
@@ -46,24 +46,24 @@ function matrixMultGreen
     v'' = normalize v';
     print ("Normalized to: "^(showVec[num] showNum v''));
     if numIters > 0 then {
-      matrixMultGreen eps (numIters -. 1) v''
+      matrixMult eps (numIters -. 1) v''
     } else { v'' }
 }
 
 // WHITE ZONE
-function main (dbMaxSize : int) (epsexp : num) (fn : string) : string {
+function main (args : string vector) : string {
   db = fun (u:()) {(db = ...)};
   loadDB[db] db (1, 0.00001);
-  dbsize = dbMaxSize;
-  numIters = 20;
-  eps = 1 / (pow 2 epsexp);
+  dbsize = ...;
+  eps = ...;
   v = ...;
+  numIters = 20;
   print "Find Eigenvector";
   print ("ε per iteration = "^showNum eps);
   print ("dbsize = "^showNum dbsize);
   print ("Number of iterations = "^showNum numIters);
   print ("Original v = "^(showVec[num] showNum v));
-  gdGreen eps numIters v
+  matrixMult eps numIters v
 }
 main
 

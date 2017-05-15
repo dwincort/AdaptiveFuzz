@@ -13,33 +13,26 @@ open Support.Error
 
 let infile     = ref ("" : string)
 
-let programArgs = ref (None, None, None)
-let setDBMaxSize i = match !programArgs with
-  (_, n, s) -> programArgs := (Some i, n, s)
-let setEpsilon n = match !programArgs with
-  (i, _, s) -> programArgs := (i, Some n, s)
-let setFN s = match !programArgs with
-  (i, n, _) -> programArgs := (i, n, Some s)
+let programArgs = ref []
 let retainCMem = ref false
 
 let argDefs = [
-  "-dbsize",           Arg.Int  (fun i -> setDBMaxSize i), "Set Database size argument" ;
-  "-e",                Arg.Float (fun n -> setEpsilon n), "Set epsilon argument" ;
-  "-fn",               Arg.String (fun s -> setFN s), "Set filename argument" ;
-  "-plim",             Arg.Int  (fun i -> Prim.pinterpLimit := i), "Set max number of steps for partial evaluation" ;
-  "-rzfile",           Arg.String (fun s -> Prim.rzFileName := s), "Set the name for the redZoneTemp file" ;
-  "-curfile",          Arg.String (fun s -> Codegen.curatorMemFileName := s), "Set the name for the curator memory file" ;
-  
-  "--no-noise",        Arg.Unit (fun () -> Math.noNoise := true), "Disable noise, making all laplace calls return 0" ;
-  "--no-compiler",     Arg.Unit (fun () -> Prim.useCompiler := false), "Disable compilation, making all red zone calls interpreted" ;
-  "--retainCMem",      Arg.Unit (fun () -> retainCMem := true), "Do not refresh the curator memory file before running" ;
+  "-args",             Arg.Rest (fun s -> programArgs := !programArgs @ [s]), "Provide program arguments (must come last)" ;
+
+  "-plim",             Arg.Set_int Prim.pinterpLimit, "Set max number of steps for partial evaluation" ;
+  "-rzfile",           Arg.Set_string Prim.rzFileName, "Set the name for the dataZoneTemp file" ;
+  "-curfile",          Arg.Set_string Codegen.curatorMemFileName, "Set the name for the curator memory file" ;
+
+  "--no-noise",        Arg.Set Math.noNoise, "Disable noise, making all laplace calls return 0, etc." ;
+  "--no-compiler",     Arg.Clear Prim.useCompiler, "Disable compilation, making all data zone calls interpreted" ;
+  "--retainCMem",      Arg.Set retainCMem, "Do not refresh the curator memory file before running" ;
   
   "-v",                Arg.Int  (fun l  -> debug_options := {!debug_options with level = l} ),       "Set printing level to n (1 Warning [2 Info], 3+ Debug)" ;
   "--verbose",         Arg.Int  (fun l  -> debug_options := {!debug_options with level = l} ),       "Set printing level to n (1 Warning [2 Info], 3+ Debug)" ;
-  
+
   "--disable-types",   Arg.Unit (fun () -> comp_disable TypeChecker ), "Disable type checking and inference" ;
   "--disable-interp",  Arg.Unit (fun () -> comp_disable Interpreter ), "Disable interpreter" ;
-  
+
   "--disable-unicode", Arg.Unit (fun () -> debug_options := {!debug_options with unicode = false} ), "Disable unicode printing" ;
   "--enable-annot",    Arg.Unit (fun () -> debug_options := {!debug_options with pr_ann  = true} ),  "Enable printing of type annotations" ;
   "--print-var-full",  Arg.Unit (fun () -> debug_options := {!debug_options with var_output = PrVarBoth} ), "Print names and indexes of variables" ;
@@ -71,30 +64,18 @@ let parse file =
   let fd = Unix.openfile file [Unix.O_RDONLY] 0o640 in
   let lexbuf = Lexer.create file (Unix.in_channel_of_descr fd) in
   let program =
-    try Parser.body Lexer.main lexbuf
-    with Parsing.Parse_error -> error_msg Parser (Lexer.info lexbuf) "Parse error" in
+    try Parser.body Lexer.main2 lexbuf
+    with Parsing.Parse_error -> error_msg Parser (Lexer.maininfo lexbuf) "Parse error" in
   Parsing.clear_parser();
   Unix.close fd;
   program
 
 (* Main must be db_source -> fuzzy string *)
 let check_main_type ty =
-  let (dbsizeArg, epsArg, fnArg) = !programArgs in
-  let ty = match ty,dbsizeArg with
-    | ty, None -> ty
-    | TyLollipop (TyPrim PrimInt, _, ty), Some _ -> ty
-    | _, _ -> TyPrim PrimUnit in
-  let ty = match ty,epsArg with
-    | ty, None -> ty
-    | TyLollipop (TyPrim PrimNum, _, ty), Some _ -> ty
-    | _, _ -> TyPrim PrimUnit in
-  let ty = match ty,fnArg with
-    | ty, None -> ty
-    | TyLollipop (TyPrim PrimString, _, ty), Some _ -> ty
-    | _, _ -> TyPrim PrimUnit in
   match ty with
     | TyPrim PrimString -> ()
-    | _ -> main_error dp "The type of the program is wrong"
+    | TyLollipop (TyPrim1 (Prim1Vector, TyPrim PrimString), _, TyPrim PrimString) -> ()
+    | _ -> main_error dp "A runnable program must have the type 'string' or 'string vector -> string'."
 
 let type_check program =
   main_info  dp "Beginning type checking ...";
@@ -102,7 +83,9 @@ let type_check program =
 
   main_info  dp "Type of the program: @[%a@]" Print.pp_type ty;
   
-  if comp_enabled Interpreter then check_main_type ty else ()  
+  if comp_enabled Interpreter then check_main_type ty else ();
+  ty
+
 
 
 (* Must use this *)
@@ -141,32 +124,30 @@ let main () =
   (* Print the results of the parsing phase *)
   main_debug dp "Parsed program:@\n@[%a@]@." Print.pp_term program;
 
-  if comp_enabled TypeChecker then
-    type_check program;
+  let programWithArgs = TmApp(dp, program, TmVector(dp, TyPrim1 (Prim1Vector, TyPrim PrimString), 
+            List.map (fun s -> TmPrim(dp, PrimTString s)) !programArgs)) in
+  
+  let program =
+    if comp_enabled TypeChecker then
+      match type_check program with
+      | TyPrim PrimString -> program
+      | TyLollipop (TyPrim1 (Prim1Vector, TyPrim PrimString), _, TyPrim PrimString) -> programWithArgs
+      | _ -> main_error dp "The type of the program is impossibly wrong"; program
+    else
+      (if !programArgs == [] then program else programWithArgs)
 
-  if comp_enabled Interpreter then
+  in if comp_enabled Interpreter then
     (* Set up Randomness *)
     Random.self_init ();
-    
+
     (* Set up the curator memory file *)
     if !Prim.useCompiler then
       (if !retainCMem then
         ignore (Sys.command ("touch "^(!Codegen.curatorMemFileName)))
        else
         ignore (Sys.command ("> "^(!Codegen.curatorMemFileName))));
-      
-    let di = Support.FileInfo.dummyinfo in
-    let (dbsizeArg, epsArg, fnArg) = !programArgs in
-    let program = match dbsizeArg with
-      | None -> program
-      | Some dbSize -> TmApp(di, program, TmPrim(di, PrimTInt dbSize)) in
-    let program = match epsArg with
-      | None -> program
-      | Some eps -> TmApp(di, program, TmPrim(di, PrimTNum eps)) in
-    let program = match fnArg with
-      | None -> program
-      | Some fn -> TmApp(di, program, TmPrim(di, PrimTString fn))
-    in let outputStr = Interpreter.run_interp program in
+
+    let outputStr = Interpreter.run_interp program in
     main_info dp "The result of the program: %s" outputStr;
   ()
 
@@ -177,4 +158,3 @@ let res =
       0
   with Exit x -> x
 let () = exit res
-

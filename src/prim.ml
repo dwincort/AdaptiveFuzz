@@ -11,6 +11,8 @@ open Syntax
 open Interpreter.InterpMonad
 open Support.FileInfo
 open Print
+open Conversion
+open Conversion.Mkers
 
 (* We create a few helper functions for simplifying the creation of 
    primitive functions.  The main components are the functions fun_of_1arg,
@@ -34,7 +36,7 @@ open Print
    itself.
 *)
 
-let rzFileName = ref "redZoneTemp"
+let rzFileName = ref "dataZoneTemp"
 let pinterpLimit = ref 50
 let useCompiler = ref true
 
@@ -42,10 +44,6 @@ let useCompiler = ref true
 let di = dummyinfo
 
 module Creation = struct
-  
-  type ('a,'b) either = | Left  of 'a
-                        | Right of 'b
-  
   (* The expectation functions take a term and return an ocaml value *)
   let exBool name tb = match tb with 
     | TmPrim (_i, PrimTBool b) -> return b
@@ -89,31 +87,6 @@ module Creation = struct
     | _ -> fail_pp "** Primitive ** %s expected a list but found %a" name pp_term tl
   let exFun _name t = return t (* Theoretically, we could check that it's actually a function, but we don't need to *)
   let exAny _name t = return t
-  
-  (* The make functions turn an ocaml value into a term *)
-  let mkBool i b   = TmPrim (i, PrimTBool b)
-  let mkNum i n    = TmPrim (i, PrimTNum n)
-  let mkClipped i c = TmPrim (i, PrimTClipped (if c > 1.0 then 1.0 else if c < 0.0 then 0.0 else c))
-  let mkInt i n    = TmPrim (i, PrimTInt n)
-  let mkString i s = TmPrim (i, PrimTString s)
-  let mkBag i (ty, l) = TmBag (i, ty, l)
-  let mkVector i (ty, l) = TmVector (i, ty, l)
-  let mkToken i (n,ty)  = TmPrim (i, PrimTToken (n,ty))
-  let mkPair mk1 mk2 i (t1, t2) = TmPair (i, mk1 i t1, mk2 i t2)
-  let mkSum mkl mkr i (tyl, tyr, x) = match x with
-    | Left l  -> TmLeft (i, mkl i l, tyr)
-    | Right r -> TmRight(i, mkr i r, tyl)
-  let mkPVal mk i t  = TmPVal (i, mk i t)
-  let mkAny _i t   = t
-  let mkUnit i _   = TmPrim (i, PrimTUnit)
-
-  let rec mkList mkA i (ty, lst) = 
-    let lsttype = TyMu({b_name = "XX"; b_type = BiTyVar; b_size = -1; b_prim = false;}, TyUnion
-            (TyPrim PrimUnit, TyTensor(ty, TyVar
-                ({v_index = 0; v_name = "XX"; v_size = -1; v_type = BiTyVar;})))) in
-    match lst with
-    | [] -> TmFold(i, lsttype, TmLeft(i, TmPrim(i, PrimTUnit), TyTensor(ty, lsttype)))
-    | x::xs -> TmFold(i, lsttype, TmRight(i, TmPair(i, mkA i x, mkList mkA i (ty, xs)), TyPrim PrimUnit))
   
   (* thunkify is a special function whose purpose is to wrap around a primitive function and prevent
      it from being evaluated too soon.  Essentially, it helps enforce that probabilistic values, which
@@ -404,74 +377,6 @@ let fileLines (maxLines : int) (filename : string) =
     close_in chan;
     List.rev !lines
 
-let stringToFloat (s : string) : float = 
-  try
-    float_of_string s
-  with Failure _ ->
-    message 0 "prim.ml: float_of_string failed to parse: %s.  Providing 0 instead.\n" s;
-    0.
-
-let stringToInt (s : string) : int = 
-  try
-    int_of_string s
-  with Failure _ ->
-    message 0 "prim.ml: int_of_string failed to parse: %s.  Providing 0 instead.\n" s;
-    0
-
-let stringToBool (s : string) : bool = 
-  try
-    bool_of_string s
-  with Failure _ ->
-    message 0 "prim.ml: bool_of_string failed to parse: %s.  Providing false instead.\n" s;
-    false
-
-let rec typeToMaker (i : info) (ty : ty) : (string -> term) option = match ty with
-  | TyPrim PrimNum  -> Some (fun s -> mkNum i (stringToFloat s))
-  | TyPrim PrimInt  -> Some (fun s -> mkInt i (stringToInt s))
-  | TyPrim PrimUnit -> Some (mkUnit i)
-  | TyPrim PrimBool -> Some (fun s -> mkBool i (stringToBool s))
-  | TyPrim PrimString   -> Some (mkString i)
-  | TyPrim PrimClipped  -> Some (fun s -> mkClipped i (stringToFloat s))
-  | TyPrim1 (Prim1Token, t) -> Some (fun s -> mkToken i (stringToInt s, t))
-  | TyPrim1 (Prim1Bag, t) -> Option.map
-        (fun mker -> (fun s -> mkBag    i (ty, List.map mker (Str.split (Str.regexp "[ \t]+") s))))
-        (typeToMaker i t)
-  | TyPrim1 (Prim1Vector, t) -> Option.map 
-        (fun mker -> (fun s -> mkVector i (ty, List.map mker (Str.split (Str.regexp "[ \t]+") s))))
-        (typeToMaker i t) 
-  | _ -> None
-
-let marshalFromString (s : string) : 'a option = 
-  try
-    Some (Marshal.from_string s 0)
-  with Invalid_argument _ -> None
-
-
-let rec unMarshalTerm (i : info) (ty : ty) (obj : 'a) : term option = match ty with
-  | TyPrim PrimNum  -> Some (mkNum i (Obj.magic obj))
-  | TyPrim PrimInt  -> Some (mkInt i (Obj.magic obj))
-  | TyPrim PrimUnit -> Some (mkUnit i ())
-  | TyPrim PrimBool -> Some (mkBool i (Obj.magic obj))
-  | TyPrim PrimString   -> Some (mkString i (Obj.magic obj))
-  | TyPrim PrimClipped  -> Some (mkClipped i (Obj.magic obj))
-  | TyPrim1 (Prim1Token, t) -> Some (mkToken i (Obj.magic obj, t))
-  | TyPrim1 (Prim1Bag, t) -> let v = Option.opt_bind_list (List.map (unMarshalTerm i t) (Obj.magic obj)) in
-        Option.map (fun lst -> mkBag i (ty,lst)) v
-  | TyPrim1 (Prim1Vector, t) -> let v = Option.opt_bind_list (List.map (unMarshalTerm i t) (Array.to_list (Obj.magic obj))) in
-        Option.map (fun lst -> mkVector i (ty,lst)) v
-  | TyTensor(t1,t2) -> let (v1,v2) = Obj.magic obj in
-                       Option.obind (unMarshalTerm i t1 v1) (fun tm1 ->
-                       Option.obind (unMarshalTerm i t2 v2) (fun tm2 ->
-                       Some (TmPair(i,tm1,tm2))))
-  | TyAmpersand(t1,t2) -> let (v1,v2) = Obj.magic obj in
-                       Option.obind (unMarshalTerm i t1 v1) (fun tm1 ->
-                       Option.obind (unMarshalTerm i t2 v2) (fun tm2 ->
-                       Some (TmAmpersand(i,tm1,tm2))))
-  | TyUnion(t1,t2) -> begin match Obj.magic obj with
-                      | Left a  -> Option.map (fun tm -> TmLeft (i,tm,t2)) (unMarshalTerm i t1 a)
-                      | Right b -> Option.map (fun tm -> TmRight(i,tm,t1)) (unMarshalTerm i t2 b)
-                      end
-  | _ -> None
 
 (*****************************************************************************)
 (*****************************************************************************)
@@ -500,6 +405,18 @@ let assertEqFun
 
 
 (*****************************************************************************)
+(* The following functions are for catching errors during reading. *)
+
+let readNumFun s = try
+    float_of_string s
+  with Failure s -> (message 1 "Failure to read %s as a float.  Returning 0." s; 0.)
+
+let readIntFun s = try
+    int_of_string s
+  with Failure s -> (message 1 "Failure to read %s as an int.  Returning 0." s; 0)
+
+
+(*****************************************************************************)
 (* The following functions invoke the Fuzz sensitivity type checker. *)
 
 let tyCheckFuzzFun
@@ -518,43 +435,42 @@ let tyCheckFuzzFun
       | Ok (tyf, _) -> fail_pp "**Primitive** tyCheckFuzz's function argument has non-lollipop type: %a" pp_type tyf
       | Error (d,e) -> genFailResult @@ pp_to_string "TYPE FAIL: %a %a" pp_fileinfo e.i (pp_tyerr d) e.v
 
-let runRedZone
+(* FIXME: Use mkSum to make this function prettier. *)
+let runFuzz
   (ty : ty)
   (sens : float)
   (f : term)
-  : term interpreter =
-    onlyInFullEval "runRedZone" >>
+  : (ty * ty * (string, term) either) interpreter =
+    onlyInFullEval "runFuzz" >>
     (match ty with
       | TyUnion(_, aty) -> return aty
-      | _ -> fail_pp "**Primitive** runRedZone found an unexpected return type: %a" pp_type ty
+      | _ -> fail_pp "**Primitive** runFuzz found an unexpected return type: %a" pp_type ty
     ) >>= fun outty ->
-    let genFailResult s = return (TmLeft(di, TmPrim(di, PrimTString s), outty)) in
-    match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
+    (match Tycheck.type_of f (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
       | Ok (TyLollipop(_, SiConst n, _), _) when n <= sens -> begin
-          attemptRedZone n >>= fun succ ->
+          attemptDataZone n >>= fun succ ->
           match succ, !useCompiler with
-            | false, _ -> genFailResult "Database is all used up"
+            | false, _ -> return @@ Left "Database is all used up"
             | true, true -> begin
                 getDB >>= fun db ->
                 let query = TmApp(di, TmApp(di, f, TmApp(di, db, mkUnit di ())), mkUnit di ()) in
-                match Codegen.runCompiled (!rzFileName) query with
-                  | Error s -> genFailResult s
-                  | Ok res  -> begin match Option.obind (marshalFromString res) (unMarshalTerm di outty) with
-                    | Some r -> return (TmRight(di, r, TyPrim PrimString))
-                    | None -> fail @@ "**Primitive** RunRedZone: Failed to unmarshal term: "^res
-                    end
+                match Codegen.runCompiled (!rzFileName) di query outty with
+                  | Error s -> return @@ Left s
+                  | Ok r -> return @@ Right r
                 end
             | true, false ->
                 getDB >>= fun db ->
-                Interpreter.interp (TmUnPVal (di, (TmApp(di, f, TmApp(di, db, TmPrim(di, PrimTUnit)))))) >>= fun a -> return (TmRight(di, a, TyPrim PrimString))
+                Interpreter.interp (TmUnPVal (di, (TmApp(di, f, TmApp(di, db, TmPrim(di, PrimTUnit)))))) >>= fun r ->
+                return @@ Right r
           end
-      | Ok (TyLollipop(_, SiConst n, _), _) -> genFailResult @@
-            pp_to_string "runRedZone expected a %F-sensitive function but found a %F-sensitive function" sens n
-      | Ok (TyLollipop(_, SiInfty, _), _)   -> genFailResult @@
-            pp_to_string "runRedZone expected a %F-sensitive function but found an infinitely sensitive function" sens
-      | Ok (TyLollipop(_, si, _), _) -> fail_pp "**Primitive** runRedZone found an unexpected sensitivity: %a" pp_si si
-      | Ok (tyf, _) -> fail_pp "**Primitive** runRedZone's function argument has non-lollipop type: %a" pp_type tyf
-      | Error (d,e) -> genFailResult @@ pp_to_string "TYPE FAIL: %a %a" pp_fileinfo e.i (pp_tyerr d) e.v
+      | Ok (TyLollipop(_, SiConst n, _), _) -> return @@ Left
+            (pp_to_string "runFuzz expected a %F-sensitive function but found a %F-sensitive function" sens n)
+      | Ok (TyLollipop(_, SiInfty, _), _)   -> return @@ Left
+            (pp_to_string "runFuzz expected a %F-sensitive function but found an infinitely sensitive function" sens)
+      | Ok (TyLollipop(_, si, _), _) -> fail_pp "**Primitive** runFuzz found an unexpected sensitivity: %a" pp_si si
+      | Ok (tyf, _) -> fail_pp "**Primitive** runFuzz's function argument has non-lollipop type: %a" pp_type tyf
+      | Error (d,e) -> return @@ Left (pp_to_string "TYPE FAIL: %a %a" pp_fileinfo e.i (pp_tyerr d) e.v)
+    ) >>= fun res -> return (TyPrim PrimString, outty, res)
 
 
 (*****************************************************************************)
@@ -603,27 +519,29 @@ let bagsumLFun
   (n : int)
   (b : term list)
   : (ty * float list) interpreter =
-    let rec sumUp xs ys = match xs,ys with
-            | x::xs,y::ys -> (x +. y)::sumUp xs ys
-            | xs,[] -> xs
-            | [],ys -> ys
+    let rec sumUp k xs ys = match k,xs,ys with
+            | 0,_,_ -> []
+            | _,x::xs,y::ys -> (x +. y)::sumUp (k - 1) xs ys
+            | _,xs,[] -> Util.listTake k xs
+            | _,[],ys -> Util.listTake k ys
     in 
     mapM (fun t -> Interpreter.interp t >>= exList exNum "bagsumL") b >>= fun numlstlst ->
-    return @@ (TyPrim PrimNum, List.fold_left sumUp [] numlstlst)
+    return @@ (TyPrim PrimNum, List.fold_left (sumUp n) [] numlstlst)
 
 let bagsumVFun
   (oty : ty)
   (n : int)
   (b : term list)
   : (ty * term list) interpreter =
-    let rec sumUp xs ys = match xs,ys with
-            | x::xs,y::ys -> (x +. y)::sumUp xs ys
-            | xs,[] -> xs
-            | [],ys -> ys
+    let rec sumUp k xs ys = match k,xs,ys with
+            | 0,_,_ -> []
+            | _,x::xs,y::ys -> (x +. y)::sumUp (k - 1) xs ys
+            | _,xs,[] -> Util.listTake k xs
+            | _,[],ys -> Util.listTake k ys
     in 
     mapM (fun t -> Interpreter.interp t >>= exVector "bagsumV" >>= mapM 
             (fun t' -> Interpreter.interp t' >>= exNum "bagsumV")) b >>= fun numlstlst ->
-    return (oty, List.map (mkNum di) (List.fold_left sumUp [] numlstlst))
+    return (oty, List.map (mkNum di) (List.fold_left (sumUp n) [] numlstlst))
 
 
 
@@ -685,24 +603,21 @@ let aboveThresholdFun
   (k : float)
   (t : float)
   (db : term)
-  : (int * ty) interpreter = 
+  : term interpreter = 
     onlyInFullEval "aboveThreshold" >>
     (match ty with
       | TyPrim1 (Prim1Fuzzy, TyPrim1 (Prim1Token, TyLollipop(argtype, _, outtype))) -> return (TyLollipop(argtype, SiConst k, outtype))
       | _ -> fail_pp "**Primitive** aboveThreshold found an unexpected return type: %a" pp_type ty
     ) >>= fun ftype ->
     match !useCompiler with
-    | true -> begin match Codegen.runCompiled (!rzFileName) thisTerm with
+    | true -> begin match Codegen.runCompiled (!rzFileName) di thisTerm (TyPrim1 (Prim1Token, ftype)) with
                   | Error s -> fail @@ "**Primitive** aboveThreshold failed with message: "^s
-                  | Ok res  -> begin match marshalFromString res with
-                    | Some r -> return (r, ftype)
-                    | None -> fail @@ "**Primitive** Failed to unmarshal term: "^res
-                    end
+                  | Ok r -> return r
               end
     | false ->
         let index = List.length (!curatormem) in
         curatormem := List.append !curatormem [Some (t +. Math.lap (2.0 /. (eps *. k)), eps, db)];
-        return (index, ftype)
+        return (mkToken di (index, ftype))
 
 let rec updateNth (lst : 'a list) (index : int) (f : 'a -> 'a) : 'a list =
   match lst, index with
@@ -712,22 +627,19 @@ let rec updateNth (lst : 'a list) (index : int) (f : 'a -> 'a) : 'a list =
 
 let queryATFun
   (thisTerm : term)
-  (_ty : ty)
+  (oty : ty)
   (tok : (int * ty))
   (q : term)
-  : (ty * ty * (unit, bool) either) interpreter =
+  : term interpreter =
     onlyInFullEval "aboveThreshold query" >>
-    (match tok with
+    match tok with
     | (index, TyLollipop(_, SiConst k, TyPrim PrimNum)) -> begin
         match Tycheck.type_of q (Ctx.empty_context, 0, true, Some (!pinterpLimit, Interpreter.genPinterp)) with
           | Ok (TyLollipop(_, SiConst n, _), _) when n <= k -> begin
             match !useCompiler with
-            | true -> begin match Codegen.runCompiled (!rzFileName) thisTerm with
+            | true -> begin match Codegen.runCompiled (!rzFileName) di thisTerm oty with
                 | Error s -> fail @@ "**Primitive** aboveThresholdQuery failed with message: "^s
-                | Ok res  -> begin match marshalFromString res with
-                    | Some r -> return (Option.map_default (fun v -> Right v) (Left ()) r)
-                    | None -> fail @@ "**Primitive** Failed to unmarshal term: "^res
-                    end
+                | Ok res  -> return res
                 end
             | false -> begin match List.nth (!curatormem) index with
                 | None -> return (Left ())
@@ -736,7 +648,7 @@ let queryATFun
                     if res +. Math.lap (4.0 /. eps) >= t then
                       (curatormem := updateNth !curatormem index (fun _ -> None); return (Right true))
                     else return (Right false)
-                end
+                end >>= (fun res -> return ((mkSum mkUnit mkBool) di (TyPrim PrimUnit, TyPrim PrimBool, res)))
             end
           | Ok (TyLollipop(_, SiConst n, _), _) -> fail_pp "**Primitive** aboveThreshold expected a %F-sensitive function but found a %F-sensitive function" k n
           | Ok (TyLollipop(_, SiInfty, _), _)   -> fail_pp "**Primitive** aboveThreshold expected a %F-sensitive function but found an infinitely sensitive function" k
@@ -745,7 +657,6 @@ let queryATFun
           | Error (d,e) -> fail_pp "TYPE FAIL: %a %a" pp_fileinfo e.i (pp_tyerr d) e.v
         end
     | _ -> fail_pp "**Primitive** aboveThreshold received an inappropriate or malformed token."
-    ) >>= (fun res -> return (TyPrim PrimUnit, TyPrim PrimBool, res))
     
 
 let selectFun
@@ -766,9 +677,9 @@ let bagFromFileFun
   : (ty * term list) interpreter = 
     let lines = fileLines maxsize fn in
     match oty with
-      | TyPrim1 (Prim1Bag, subty) -> begin match typeToMaker di subty with
-          | Some lineFun -> return (oty, List.map lineFun lines)
-          | None -> fail_pp "**Primitive** bagFromFile used with an unsupported output type %a." pp_type oty
+      | TyPrim1 (Prim1Bag, subty) -> begin match Option.opt_bind_list (List.map (stringToFuzz di subty) lines) with
+          | Some lst -> return (oty, lst)
+          | None -> fail_pp "**Primitive** bagFromFile failed.  Perhaps it used an unsupported output type %a." pp_type oty
           end
       | _ -> fail_pp "**Primitive** bagFromFile found a weird type %a." pp_type oty
 
@@ -776,15 +687,13 @@ let rec listFromFileFun
   (oty : ty)
   (maxsize : int)
   (fn : string)
-  : term interpreter = 
+  : (ty * ty * term list) interpreter = 
     let lines = fileLines maxsize fn in
     match oty with
       | TyMu (_, TyUnion (TyPrim PrimUnit, TyTensor (subty, TyVar _))) -> begin
-        match typeToMaker di subty with
-          | Some lineFun -> return (List.fold_right (fun v fzlst -> TmFold (di, oty, TmRight (di, TmPair (di, v, fzlst), TyPrim PrimUnit)))
-                                                    (List.map lineFun lines) 
-                                                    (TmFold (di, oty, TmLeft (di, TmPrim (di, PrimTUnit), TyTensor(subty, oty)))))
-          | None -> fail_pp "**Primitive** listFromFile used with an unsupported output type %a." pp_type oty
+        match Option.opt_bind_list (List.map (stringToFuzz di subty) lines) with
+          | Some lst -> return (subty, oty, lst)
+          | None -> fail_pp "**Primitive** listFromFile failed.  Perhaps it used an unsupported output type %a." pp_type oty
         end
       | _   -> fail_pp "**Primitive** listFromFile found a weird type %a." pp_type oty
 
@@ -793,16 +702,15 @@ let listbagFromFileFun
   (maxsize : int)
   (fn : string)
   (rexp : string)
-  : (ty * term list) interpreter = 
+  : (ty * (ty * ty * term list) list) interpreter = 
     let lines = fileLines maxsize fn in
     match oty with
-      | TyPrim1 (Prim1Bag, TyMu (_, TyUnion (TyPrim PrimUnit, TyTensor (subty, TyVar _)))) -> begin
-        match typeToMaker di subty with
-          | Some wordFun -> let lineFun line = List.fold_right (fun v fzlst -> TmFold (di, oty, TmRight (di, TmPair (di, v, fzlst), TyPrim PrimUnit)))
-                                (List.map wordFun (Str.split (Str.regexp rexp) line))  (*"[ \t]+"*)
-                                (TmFold (di, oty, TmLeft (di, TmPrim (di, PrimTUnit), subty)))
-                            in return (oty, List.map lineFun lines)
-          | None -> fail_pp "**Primitive** listbagFromFile used with an unsupported output type %a." pp_type oty
+      | TyPrim1 (Prim1Bag, (TyMu (_, TyUnion (TyPrim PrimUnit, TyTensor (subty, TyVar _))) as listty)) -> begin
+        let lineFun line = Option.map (fun lst -> (subty, listty, lst))
+          (Option.opt_bind_list (List.map (stringToFuzz di subty) (Str.split (Str.regexp rexp) line)))  (*"[ \t]+"*)
+        in match Option.opt_bind_list (List.map lineFun lines) with
+          | Some lst -> return (oty, lst)
+          | None -> fail_pp "**Primitive** listbagFromFile failed.  Perhaps it used an unsupported output type %a." pp_type oty
           end
       | _   -> fail_pp "**Primitive** listbagFromFile found a weird type %a." pp_type oty
 
@@ -812,15 +720,34 @@ let vectorbagFromFileFun
   (maxsize : int)
   (fn : string)
   (rexp : string)
-  : (ty * term list) interpreter = 
+  : (ty * (ty * term list) list) interpreter = 
     let lines = fileLines maxsize fn in
     match oty with
-      | TyPrim1 (Prim1Bag, TyPrim1 (Prim1Vector, subty)) -> begin match typeToMaker di subty with
-          | Some wordFun -> let lineFun line = mkVector di (TyPrim1 (Prim1Vector, subty), List.map wordFun (Str.split (Str.regexp rexp) line))
-                            in return (oty, List.map lineFun lines)
-          | None -> fail_pp "**Primitive** vectorbagFromFile used with an unsupported output type %a." pp_type oty
+      | TyPrim1 (Prim1Bag, (TyPrim1 (Prim1Vector, subty) as vecty)) -> begin
+        let lineFun line = Option.map (fun lst -> (vecty, lst))
+          (Option.opt_bind_list (List.map (stringToFuzz di subty) (Str.split (Str.regexp rexp) line)))
+        in match Option.opt_bind_list (List.map lineFun lines) with
+          | Some lst -> return (oty, lst)
+          | None -> fail_pp "**Primitive** vectorbagFromFile failed.  Perhaps it used an unsupported output type %a." pp_type oty
           end
       | _   -> fail_pp "**Primitive** vectorbagFromFile found a weird type %a." pp_type oty
+
+let labeledVectorbagFromFileFun
+  (oty : ty)
+  (maxsize : int)
+  (fn : string)
+  (rexp : string)
+  : (ty * (term * (ty * term list)) list) interpreter = 
+    let lines = fileLines maxsize fn in
+    match oty with
+      | TyPrim1 (Prim1Bag, TyTensor (_, (TyPrim1 (Prim1Vector, subty) as vecty))) -> begin
+        let lineFun line = Option.map (fun lst -> (List.hd lst, (vecty, List.tl lst)))
+          (Option.opt_bind_list (List.map (stringToFuzz di subty) (Str.split (Str.regexp rexp) line)))
+        in match Option.opt_bind_list (List.map lineFun lines) with
+          | Some lst -> return (oty, lst)
+          | None -> fail_pp "**Primitive** labeledVectorbagFromFile failed.  Perhaps it used an unsupported output type %a." pp_type oty
+          end
+      | _   -> fail_pp "**Primitive** labeledVectorbagFromFile found a weird type %a." pp_type oty
 
 
 (*****************************************************************************)
@@ -905,18 +832,31 @@ let vzipwithFun
 let rec vfilterFun 
   (ty : ty)
   (test : term)
-  (f : term)
   (lst : term list)
   : (ty * term list) interpreter = 
     match lst with
     | x::xs -> Interpreter.interp (TmApp(di, test, x)) >>= exBool "vfilter" >>= fun b ->
-               if b then begin
-                 Interpreter.interp (TmApp(di, f, x)) >>= fun t ->
-                 vfilterFun ty test f xs >>= fun (ty,ts) ->
-                 return (ty, t::ts)
-               end else
-                 vfilterFun ty test f xs
+               vfilterFun ty test xs >>= fun (ty,ts) ->
+               return (ty, if b then x::ts else ts)
     | _ -> return (ty,[])
+
+let vfuzzFun
+  (ty : ty)
+  (lst : term list)
+  : (ty * term list) interpreter = 
+    match ty with
+    | TyPrim1 (Prim1Fuzzy, vty) -> return (vty, List.map (fun x -> TmUnPVal (di, x)) lst)
+    | _   -> fail_pp "**Primitive** vfuzz found a weird type %a." pp_type ty
+
+let rec vfoldlFun
+  (f : term)
+  (a : term)
+  (blst : term list)
+  : term interpreter =
+    match blst with
+    | [] -> return a
+    | b::bs -> Interpreter.interp (TmApp(di, TmApp(di, f, a), b)) >>= fun x ->
+               vfoldlFun f x bs
 
 
 (*****************************************************************************)
@@ -974,6 +914,10 @@ let prim_list : (string * primfun) list = [
 ("showBag", fun_of_2args_i "showBag" exFun exBag mkString showBagFun);
 ("showVec", fun_of_2args_i "showVec" exFun exVector mkString showVecFun);
 
+(* Read functions *)
+("readNum", fun_of_1arg "readNum" exString mkNum readNumFun);
+("readInt", fun_of_1arg "readInt" exString mkInt readIntFun);
+
 (* Testing Utilities *)
 ("_assert",  fun_of_2args "_assert"  exString exBool mkUnit assertFun);
 ("assertEq", fun_of_3args "assertEq" exString exAny exAny mkUnit assertEqFun);
@@ -984,9 +928,9 @@ let prim_list : (string * primfun) list = [
 
 ("loadDB", fun_of_2args_i "loadDB" exFun (exPair exNum exNum) mkUnit storeDB);
 
-(* Red zone activation primitives *)
+(* Data zone activation primitives *)
 ("tyCheckFuzz", fun_of_2args_i "tyCheckFuzz" exNum exAny mkAny tyCheckFuzzFun);
-("runRedZone", fun_of_2args_with_type_i "runRedZone" exNum exFun mkAny runRedZone);
+("runFuzz", fun_of_2args_with_type_i "runFuzz" exNum exFun (mkSum mkString mkAny) runFuzz);
 
 ("getDelta",   fun_of_1arg_i "getDelta"   exAny mkNum (fun _ -> onlyInFullEval "getDelta"   >> getDelta));
 ("getEpsilon", fun_of_1arg_i "getEpsilon" exAny mkNum (fun _ -> onlyInFullEval "getEpsilon" >> getEpsilon));
@@ -1014,17 +958,17 @@ let prim_list : (string * primfun) list = [
   (fun_of_5args_i "reportNoisyMaxP" exNum exNum exFun exBag exAny mkAny reportNoisyMaxFun));
 ("expMech", thunkify "expMech" "expMechP"
   (fun_of_5args_i "expMechP" exNum exNum exFun exBag exAny mkAny expMechFun));
-("select", thunkify "select" "selectP"
-  (fun_of_2args_with_type_i "select" exNum exBag mkBag selectFun));
+("select", fun_of_2args_with_type_i "select" exNum exBag mkBag selectFun);
 ("aboveThreshold", thunkify "aboveThreshold" "aboveThresholdP"
-  (fun_of_4args_with_type_i_self "aboveThresholdP" exNum exNum exNum exAny mkToken aboveThresholdFun));
-("queryAT", fun_of_2args_with_type_i_self "queryAT" exToken exFun (mkSum mkUnit mkBool) queryATFun);
+  (fun_of_4args_with_type_i_self "aboveThresholdP" exNum exNum exNum exAny mkAny aboveThresholdFun));
+("queryAT", fun_of_2args_with_type_i_self "queryAT" exToken exFun mkAny queryATFun);
 
 (* Load data from external file *)
 ("bagFromFile",  fun_of_2args_with_type_i "bagFromFile"  exInt exString mkBag bagFromFileFun);
-("listFromFile", fun_of_2args_with_type_i "listFromFile" exInt exString mkAny listFromFileFun);
-("listbagFromFile", fun_of_3args_with_type_i "listbagFromFile" exInt exString exString mkBag listbagFromFileFun);
-("vectorbagFromFile", fun_of_3args_with_type_i "vectorbagFromFile" exInt exString exString mkBag vectorbagFromFileFun);
+("listFromFile", fun_of_2args_with_type_i "listFromFile" exInt exString (mkListWithType mkAny) listFromFileFun);
+("listbagFromFile", fun_of_3args_with_type_i "listbagFromFile" exInt exString exString (mkBag' (mkListWithType mkAny)) listbagFromFileFun);
+("vectorbagFromFile", fun_of_3args_with_type_i "vectorbagFromFile" exInt exString exString (mkBag' mkVector) vectorbagFromFileFun);
+("labeledVectorbagFromFile", fun_of_3args_with_type_i "labeledVectorbagFromFile" exInt exString exString (mkBag' (mkPair mkAny mkVector)) labeledVectorbagFromFileFun);
 
 (* Vector operations *)
 ("vcons", fun_of_2args_with_type_i "vcons" exAny exVector mkVector vconsFun);
@@ -1033,12 +977,17 @@ let prim_list : (string * primfun) list = [
 ("vectorToList", fun_of_1arg_with_type_i "vectorToList" exVector (mkList mkAny) vectorToListFun);
 ("vindex",  fun_of_3args "vindex"  exAny exInt exVector mkAny vindexFun);
 ("vperformAt", fun_of_3args_with_type_i "vperformAt" exInt exFun exVector mkVector vperformAtFun);
+("vfoldl", fun_of_3args_i "vfoldl" exAny exAny exVector mkAny vfoldlFun);
 ("vmap", fun_of_2args_with_type_i "vmap" exFun exVector mkVector bagmapFun);
-("vfilter", fun_of_3args_with_type_i "vfilter" exFun exFun exVector mkVector vfilterFun);
+("vsmap", fun_of_3args_with_type_i "vsmap" exNum exFun exVector mkVector (fun ty _ -> bagmapFun ty));
+("vfilter", fun_of_2args_with_type_i "vfilter" exFun exVector mkVector vfilterFun);
 ("vzipwith", fun_of_3args_with_type_i "vzipwith" exFun exVector exVector mkVector vzipwithFun);
+("vszipwith", fun_of_5args_with_type_i "vszipwith" exNum exNum exFun exVector exVector mkVector (fun ty _ _ -> vzipwithFun ty));
+("vfuzz", fun_of_1arg_with_type_i "vfuzz" exVector (mkPVal mkVector) vfuzzFun);
 ("vsize", fun_of_1arg "vsize" exVector mkInt ( List.length ));
-("vsum", fun_of_1arg_i "vsum" exVector mkNum 
-  (fun l -> mapM (fun t -> Interpreter.interp t >>= exNum "vsum") l >>= fun l' -> return (List.fold_left (+.) 0.0 l')));
+
+(*("vsum", fun_of_1arg_i "vsum" exVector mkNum 
+  (fun l -> mapM (fun t -> Interpreter.interp t >>= exNum "vsum") l >>= fun l' -> return (List.fold_left (+.) 0.0 l')));*)
 
 ]
 

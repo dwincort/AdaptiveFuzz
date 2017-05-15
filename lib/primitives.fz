@@ -5,47 +5,49 @@
    See the LICENSE file for details on licensing.
 */
 ////////////////////////////////////////////////////////////////////////
-// Core primitives resulting from parser desugaring
+// Core primitives
 
 // &-pair destruction
 primitive afst forall (A,B) (p :[] (| A, B |) ) : A { "_fst" }
 primitive asnd forall (A,B) (p :[] (| A, B |) ) : B { "_snd" }
 
-// pair destruction shortcuts
+// pair creation and destruction shortcuts
 function fst forall (A,B) (p :[] (A, B) ) : A { let (a,b) = p; a }
 function snd forall (A,B) (p :[] (A, B) ) : B { let (a,b) = p; b }
+function pair forall (A,B) (a :[] A) (b :[] B) : (A,B) { (a,b) }
 
-// Infix logical operators
+// Infix logical operators (also provided by parser desugaring of || and &&)
 primitive op_lor  (op1 : bool) (op2 : bool) : bool { "_lor" }
 primitive op_land (op1 : bool) (op2 : bool) : bool { "_land" }
 op_not = fun (b : bool) : bool { if b then { false } else { true } };
 
-// Polymorphic equality
+// Polymorphic equality (also provided by parser desugaring of == and !=)
 primitive op_eq   forall(A) (op1 : A) (op2 : A) : bool { "_eq" }
 function  op_neq  forall(A) (op1 : A) (op2 : A) : bool { op_not (op_eq op1 op2) }
 
 // Num primitives
-// Numerical comparison
+// Numerical comparison  (also provided by parser desugaring)
 primitive op_lt   (op1 : num ) (op2 : num ) : bool { "_lt" }
 primitive op_gt   (op1 : num ) (op2 : num ) : bool { "_gt" }
 primitive op_lte  (op1 : num ) (op2 : num ) : bool { "_lte" }
 primitive op_gte  (op1 : num ) (op2 : num ) : bool { "_gte" }
 
-// Numerical Computation
+// Numerical Computation (also provided by parser desugaring)
 primitive op_add (op1 :[] num ) (op2 :[] num )  : num { "_add" }
 primitive op_sub (op1 :[] num ) (op2 :[] num )  : num { "_sub" }
 primitive op_mul (op1 : num ) (op2 : num )      : num { "_mul" }
 primitive op_div (op1 : num ) (op2 : num )      : num { "_div" }
+
+// Further Numerical Computation
 primitive op_exp (n : num )                     : num { "_exp" }
 primitive op_log (n : num )                     : num { "_log" }
 primitive op_abs (n :[] num )                   : num { "_abs" }
 primitive cswp (xy :[] (num, num))              : (num, num) { "cswp" }
 min = fun (xy :[] (num, num)) : num { let (x,y) = (cswp xy); x };
 max = fun (xy :[] (num, num)) : num { let (x,y) = (cswp xy); y };
-
 primitive scale (c : num) (n :[[op_abs c]] num)   : num { "_mul" }
 
-// Integer primitives
+// Integer primitives (also provided by parser desugaring)
 primitive op_iadd (op1 :[] int ) (op2 :[] int ) : int { "_iadd" }
 primitive op_isub (op1 :[] int ) (op2 :[] int ) : int { "_isub" }
 primitive op_imul (op1 : int ) (op2 : int ) : int { "_imul" }
@@ -53,57 +55,42 @@ primitive op_idiv (op1 : int ) (op2 : int ) : int { "_idiv" }
 primitive intToPeano (n :[] int) : (mu X => (() + X)) { "intToPeano" }
 intToFloat = fun (x :[] num) : num { x };
 
-// Clip type creation
+// Clip type creation and operations
 primitive clip (n :[] num) : clipped                    { "clip" }
 primitive fromClip (c :[] clipped) : num                { "fromClip" }
-
-// Clip operations
 primitive clip_mult (op1 :[] clipped) (op2 :[] clipped) : clipped { "_mul" }
 primitive clip_scale (op1 :[] clipped) (op2 :[] num) : num { "_mul" }
 
-// String primitives
+// String primitive
 primitive string_concat (s1 :[] string) (s2 :[] string) : string { "string_cc" }
 
-// Show functions
-showBool = fun (b : bool) : string { if b then {"true"} else {"false"} };
+// Show functions for primitive types
 primitive showNum (n : num) : string { "showNum" }
 primitive showInt (n : int) : string { "showInt" }
+showBool = fun (b : bool) : string { if b then {"true"} else {"false"} };
 showClipped = fun (c : clipped) : string { showNum (fromClip c) };
 function showPair forall(A,B) (pA : A -> string) (pB : B -> string) (p : (A,B)) : string {
   let (a,b) = p;
    "("^(pA a)^","^(pB b)^")"
 }
 
-////////////////////////////////////////////////////////////////////////
-// Vector functions
-primitive vmapl forall (A,B) (f : A -o B) (a :[] A vector) : B vector { "vmap" }
-primitive vmap  forall (A,B) (f : A -> B) (a : A vector)   : B vector { "vmap" }
-primitive vfilter forall (A,B) (f : A -> bool) (g : A -> B) (a : A vector) : B vector { "vfilter" }
-primitive vsize forall(A) (b :[] A vector) : int { "vsize" }
-primitive vsum (b : num vector) : num { "vsum" }
-primitive vindex forall(A) (def :[] A) (i : int) (v :[] A vector) : A { "vindex" }
-primitive vcons forall(A) (x :[] A) (v :[] A vector) : (A vector) { "vcons" }
-primitive vuncons forall(A) (v :[] A vector) : (() + (A, A vector)) { "vuncons" }
-primitive vzipwithl forall(A,B,C) (f : A -o B -o C) (v1 :[] A vector) (v2 :[] B vector) : C vector { "vzipwith" }
-primitive vzipwith  forall(A,B,C) (f : A -> B -> C) (v1 : A vector)   (v2 : B vector)   : C vector { "vzipwith" }
-primitive vperformAt forall(A) (n : int) (f : A -o A) (v :[] A vector) : A vector { "vperformAt" }
-primitive showVec forall(A) (showA : A -> string) (v : A vector) : string { "showVec" }
-function vectorIP (v1 : num vector) (v2 : num vector) : num
-    { vsum (vzipwith[num][num][num] op_mul v1 v2) }
+// Read functions for primitive types
+primitive readNum (s : string) : num { "readNum" }
+primitive readInt (s : string) : int { "readInt" }
+readBool = fun (s : string) : bool { if s == "true" then { true } else { false }};
+
 
 ////////////////////////////////////////////////////////////////////////
 // Testing utilities
 primitive assert 
-  (s :[["No asserts in red zone"]] string) 
-  (b :[["No asserts in red zone"]] bool) : () { "_assert" }
+  (s :[["No asserts in data zone"]] string) 
+  (b :[["No asserts in data zone"]] bool) : () { "_assert" }
 primitive assertEq forall(A) 
-  (s  :[["No asserts in red zone"]] string) 
-  (a1 :[["No asserts in red zone"]] A)
-  (a2 :[["No asserts in red zone"]] A) : () { "assertEq" }
+  (s  :[["No asserts in data zone"]] string) 
+  (a1 :[["No asserts in data zone"]] A)
+  (a2 :[["No asserts in data zone"]] A) : () { "assertEq" }
 primitive print 
-  (s :[["No printing in red zone"]] string) : () { "print" }
-
-primitive debug (s :[] string) : () { "print" }
+  (s :[["No printing in data zone"]] string) : () { "print" }
 
 ////////////////////////////////////////////////////////////////////////
 // Probability monad, return and bind
@@ -112,27 +99,39 @@ primitive return   forall(A)   (x : A)                            : fuzzy A { "_
 //primitive p_sample forall(A,B) (x :[] fuzzy A) (f :[] A -> fuzzy B) : fuzzy B { "_bind"   }
 
 ////////////////////////////////////////////////////////////////////////
-// Red zone activation primitives:
+// Data Zone Primitives
 typedef delta = num;
 typedef epsilon = num;
 
+// This must be called in the "command" zone prior to running any pieces in order
+// to establish what database and budget the curator should use.
 primitive loadDB forall(DB) (db : () -> DB) (budget : (epsilon, delta)) : () { "loadDB" }
 
+// These return the current estimated values of the remaining epsilon and
+// delta budget for the loaded database.
+primitive getDelta   (_ : ()) : delta   { "getDelta"   }
+primitive getEpsilon (_ : ()) : epsilon { "getEpsilon" }
+
+// Assuming the given function f type checks with the given sensitivity, and the
+// database has enough budget for the filter to be  satisfied, then f is run
+// on the database and the value is returned as a Right value.  Otherwise, an
+// error message is returned as a Left value.
+primitive runFuzz
+  forall(DB,A)
+  (sens : num)
+  (f : DB -o[[sens]] fuzzy A)
+  : (string + A) { "runFuzz" }
+
+// This function acts like a "dry run" for runFuzz.  It uses the Fuzz verifier to
+// check the type of the given function f.  If f is appropriately sensitive, it
+// returns Right () and otherwise provides the error message as a Left value.
 primitive tyCheckFuzz 
   forall(DB,A) 
   (sens : num)
   (f : DB -o[[sens]] A) 
   : (string + ()) { "tyCheckFuzz" }
 
-primitive runFuzz
-  forall(DB,A)
-  (sens : num)
-  (f : DB -o[[sens]] fuzzy A)
-  : (string + A) { "runRedZone" }
-
-primitive getDelta   (_ : ()) : delta   { "getDelta"   }
-primitive getEpsilon (_ : ()) : epsilon { "getEpsilon" }
-
+// A testing function that asserts that the given function type checks.
 function assertTyCheck forall(DB,A)
   (name : string)
   (shouldpass : bool)
@@ -148,11 +147,15 @@ function assertTyCheck forall(DB,A)
 
 ////////////////////////////////////////////////////////////////////////
 // Differential Privacy mechanisms:
+
+// Adds Laplace noise based on the given epsilon value.
 primitive add_noise
   (eps : num)
   (n :[[eps]] num)
   : fuzzy num { "addNoise" }
 
+// Uses the Report Noisy Max mechanism to choose an element of the given set
+// based on the given quality function.
 primitive reportNoisyMax
   forall(A,DB)
   (eps : num)
@@ -162,6 +165,8 @@ primitive reportNoisyMax
   (db :[[eps]] DB) 
   : fuzzy A { "reportNoisyMax" }
 
+// Uses the Exponential mechanism to choose an element of the given set
+// based on the given quality function.
 primitive expMech
   forall(A,DB)
   (eps : num)
@@ -171,6 +176,8 @@ primitive expMech
   (db :[[eps]] DB) 
   : fuzzy A { "expMech" }
 
+// Uses the sparse vector technique to set up a sequence of queries.
+// The returned token should be used with queryAT to perform those queries.
 primitive aboveThreshold
   forall(DB)
   (eps : num)
@@ -185,14 +192,16 @@ primitive queryAT
   (q : Q)
   : () + bool { "queryAT" }
 
+// Using the concept of Secrecy of the Sample, chooses a random
+// subset of the given bag in a sensitive way.
 primitive select
   forall(A)
   (beta : clipped)
   (db :[[op_log (1+(1/beta)*(op_exp(1)-1))]] A bag)
-  : fuzzy (A bag) { "select" }
+  : A bag { "select" }
 
 ////////////////////////////////////////////////////////////////////////
-// Curry and uncurry
+// Curry, uncurry, and simple functions
 function curry forall(A,B,C)
   (f : (A, B) -o C)
   (a :[] A)
@@ -203,5 +212,7 @@ function uncurry forall(A,B,C)
   (f : A -o B -o C)
   (ab :[] (A,B))
   : C { let (a,b) = ab; f a b }
+
+function id forall(A) (x :[] A) : A { x }
 
 ()

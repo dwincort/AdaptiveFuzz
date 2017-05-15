@@ -1,9 +1,20 @@
+(* file name: codegen.ml
+   created by: Daniel Winograd-Cort
+   Last modified: 5/6/2017
+   
+   Description:
+   This file generates ml code from Fuzz code (compilation).
+*)
+
 open Format
 
 open Types
 open Print
 
 let curatorMemFileName = ref "curatormem.cmem"
+(* Use the below line for profiling *)
+(* let genversion = ref ".p.native" *)
+let genversion = ref ".native"
 
 
 let fileLines (maxLines : int) chan = 
@@ -96,7 +107,7 @@ let main () =
   curatormem := readCmemFromFile 1000 \"%s\";
   Random.self_init ();
   (try
-    Printf.printf \"%%s\\n\" (Marshal.to_string (body ()) [])
+    Printf.printf \"%%s\\n\" (%a (body ()))
   with Sys_error s -> Printf.printf \"Error: %%s\\n\" s);
   writeCmemToFile \"%s\" !curatormem;
   ()
@@ -105,19 +116,19 @@ let res = main ();
 "
 
 
-let progToFile (fn : string) (program : term) : unit =
+let progToFile (fn : string) (program : term) (ty : ty) : unit =
   let oc = open_out fn in
   let ocf = formatter_of_out_channel oc in
-  fprintf ocf codeFormat gen_term program (!Math.noNoise) (!curatorMemFileName) (!curatorMemFileName);
+  fprintf ocf codeFormat gen_term program (!Math.noNoise) (!curatorMemFileName) Conversion.marshal ty (!curatorMemFileName);
   close_out oc;
   ()
 
 
-let runCompiled (fn : string) (program : term) : (string, string) result = 
+let runCompiled (fn : string) (i : Support.FileInfo.info) (program : term) (ty : ty) : (term, string) result = 
   let file = "src/"^fn^".ml" in
-  let native = "src/"^fn^".native" in
-  let exec = "./"^fn^".native" in
-  progToFile file program;
+  let native = "src/"^fn^(!genversion) in
+  let exec = "./"^fn^(!genversion) in
+  progToFile file program ty;
   let buildResults,buildOutput = Unix.pipe () in
   ignore (Unix.waitpid [] (Unix.create_process
       "ocamlbuild" [|"ocamlbuild" ; "-use-ocamlfind" ; "-pkg" ; "unix,str" ; native |]
@@ -138,8 +149,11 @@ let runCompiled (fn : string) (program : term) : (string, string) result =
     let s = String.concat "" (fileLines 100 ic) in
     close_in ic;
     (*Support.Error.message 0 Support.Options.Interpreter Support.FileInfo.dummyinfo
-      "Result from compiled red zone: %s" s; *)
+      "Result from compiled data zone: %s" s; *)
     match (Util.contains s "Error:") with
     | Some n -> Error s
-    | None -> Ok s
+    | None -> begin match Conversion.unmarshal i ty s with
+      | Some tm -> Ok tm
+      | None -> Error ("Could not unmarshal: "^s)
+      end
 

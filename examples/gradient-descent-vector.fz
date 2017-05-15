@@ -1,0 +1,152 @@
+
+
+// Include the bags libraries (lists is included with this).
+import "library-bags.fz"
+import "library-vectors.fz"
+
+/*
+A database row is a pair of a label and a vector of clipped nums.
+*/
+
+
+
+typedef cvec = clipped vector;
+typedef nvec = num vector;
+typedef db = (clipped, cvec) bag;
+
+
+
+function calcSingleSE
+  (theta : nvec)
+  (row : (clipped, cvec))
+  : clipped {
+    let (y,ps) = row;
+    mew = clip (vectorIP theta ps);
+    r = y - mew;
+    clip (r * r)
+}
+
+function calcMSE (eps : num) (theta : nvec) (db :[[eps]] db) : fuzzy num {
+  n = bagsum (bagmap[(clipped, cvec)][clipped] (calcSingleSE theta) db);
+  add_noise eps n
+}
+
+
+function calcResid
+  (theta : nvec)
+  (row : (clipped, cvec))
+  : cvec {
+    let (y,ps) = row;
+    mew = clip (vectorIP theta ps);
+    vmap[clipped][clipped] (fun (x : clipped) : clipped { 
+            clip ((((fromClip y - mew) * (fromClip x)) + 1) / 2)
+        }) ps
+}
+
+
+function calcGrad
+  (theta : nvec)
+  (p   : int)
+  (db :[[3]] db)
+  : num {
+    v = bagsum (bagmap[(clipped, cvec)][clipped] 
+              (fun (row : (clipped, cvec)) {
+                  vindex[clipped] (clip 0.5) p (calcResid theta row) })
+              db);
+    v + v - (bagsize[(clipped, cvec)] db)
+}
+
+function updateParameter
+  (eps : num)
+  (theta : nvec)
+  (p   : int)
+  (db :[[eps]] db)
+  : fuzzy num {
+    v = calcGrad theta p db;
+    sample v_sample = add_noise (eps / 3) v;
+    return (2*v_sample)
+}
+
+
+
+
+function gradient
+  (eps : num)
+  (eta : num)
+  (theta : nvec)
+  (numIters : int)
+  : string {
+    e = getEpsilon ();
+    print ("We have "^showNum e^"*ε budget remaining and have so far produced theta="^showVec[num] showNum theta);
+    rz = runFuzz[db][num] (10*eps) (calcMSE (10*eps) theta);
+    case rz of {
+      inl(s) => s
+    | inr(mse) => 
+        print ("Current MSE (calculated with "^showNum (10*eps)^"*ε noise) = "^showNum mse);
+        if numIters <= 0 then {
+          showVec[num] showNum theta
+        } else {
+          len = vsize[num] theta;
+          function inner (p : int) : list[num] {
+              if p >= len then {
+                  nil[num]
+              } else {
+                  rz = runFuzz[db][num] eps (updateParameter eps theta p);
+                  case rz of {
+                    inl(s) => print s; nil[num]
+                  | inr(v) => v = v * eta;
+                              print ("Parameter "^showNum p^" calculated to change: "^showNum v);
+                              cons[num] v (inner (p +. 1))
+                  }
+              }
+          }
+          theta' = vzipwith[num][num][num] (op_add) theta (listToVector[num] (inner 0));
+          if vsize[num] theta' < vsize[num] theta then {
+            showVec[num] showNum theta
+          } else {
+            gradient eps eta theta' (numIters -. 1)
+          }
+        }
+    }
+}
+
+// HELPER FUNCTIONS
+
+// Set up the rows of the database
+function dbRowSetup (cl : (clipped, cvec)) : (clipped, cvec) {
+    let (label, vec) = cl;
+    (if label < 0.05 then { clip 0 } else { clip 1 }, vec)
+}
+
+// This function should take an int for its second argument, but that would require some rewriting, so it just ignores the fractional part
+function pow (base : num) (p : num) : num {
+  if p < 0 then { 1 / (pow base (0 - p)) } else {
+    if p <= 0.5 then { 1.0 } else { base * (pow base (p - 1)) }}
+}
+
+// COMMAND ZONE
+usage_str = "There must be 3 arguments: database size, the inverse exponent for epsilon, and the database filename.";
+function main (args : string vector) : string {
+  if vsize[string] args != 3 then { usage_str } else {
+  dbMaxSize = readInt (vindex[string] "Arg Fail" 0 args);
+  epsexp = readNum (vindex[string] "Arg Fail" 1 args);
+  fn = vindex[string] "Arg Fail" 2 args;
+  db = fun (u:()) {(db = labeledVectorbagFromFile dbMaxSize fn "[ \\t]+";
+        db = bagmap[(clipped,cvec)][(clipped,cvec)] dbRowSetup db;
+        db)};
+  loadDB[db] db (1, 0.00001);
+  dbsize = dbMaxSize; //bagsize[(clipped, cvec)] db;
+  numIters = 40;
+  eta = 0.5;
+  eps = 1 / (pow 2 epsexp);
+  print "Gradient Descent";
+  print ("ε per iteration = "^showNum eps);
+  print ("dbsize = "^showNum dbsize);
+  print ("Number of iterations = "^showNum numIters);
+  print ("eta = "^showNum eta^"/"^showNum dbsize);
+  print ("Labels *are* being set to 0 for <50k and 1 for greater.");
+  theta = listToVector[num] (replicate[num] 145 0.0);
+  gradient eps (eta/dbsize) theta numIters
+}}
+main
+

@@ -36,7 +36,7 @@ e ::=                                           EXPRESSIONS
       sample x = e; e                           sampled let binding
       return e                                  monadic return
       fun (x:T) {e}                             ordinary function
-      fun (x:[r]T) {e}                          r-sensitive function
+      fun (x:[[e]]T) {e}                        e-sensitive function
       fun (x:[]T) {e}                           1-sensitive function
       function x (y:T) (z:T) ... : t {e} e      recursive function definition with multiple arguments
       function x forall(...) (y:T)...: t {e} e  recursive function definition with multiple arguments

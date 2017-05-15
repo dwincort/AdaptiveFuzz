@@ -1,0 +1,11 @@
+
+import "tests/test-lists.fz"
+import "tests/test-bags.fz"
+import "tests/test-trees.fz"
+import "tests/test-simple.fz"
+import "tests/test-simple-red.fz"
+import "tests/test-fix.fz"
+import "tests/test-prob.fz"
+
+
+"Testing complete"
