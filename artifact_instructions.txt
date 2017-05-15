@@ -1,0 +1,211 @@
+----------------------------------------
+OVERVIEW
+----------------------------------------
+
+Our artifact is the language Adaptive Fuzz.  We have provided our prototype 
+implementation of the language.
+
+There are three key, testable elements of the language:
+- The language tracks the privacy budget dynamically and does not allow
+programs to run that would violate it.
+- The language properly supports privacy filters
+- The gradient descent and stagewise regression case studies are implemented
+properly and behave as expected.
+
+For the purposes of evaluation, we do not expect the evaluator to replicate 
+the case studies shown in the paper.  Not only is the census database too 
+large to attach as part of the artifact, but the case studies take quite a 
+while to run, and as there is an inherent element of randomness, the 
+evaluator's results will not be exactly the same as ours anyway.  Rather, 
+we suggest the evaluator run the case study code on a (provided) small 
+sample database, paying particular attention to the privacy budget usage.  
+For the same epsilon values, the privacy budget usage will be the same 
+regardless of how big the database is, which means it should accurately 
+demonstrate how Adaptive Fuzz is able to save privacy budget with its use 
+of filters.  (Of course, the accuracy of the results will suffer due to the 
+smaller database size.)
+
+To this end, we have provided 4 sample Adaptive Fuzz files to execute that 
+will demonstrate how Adaptive Fuzz uses filters to achieve better privacy 
+budget usage than languages that only use simple composition.  They are 
+versions of the gradient descent and stagewise regression examples from 
+Sections 4 and 5 of our paper.  These can be found in the /examples 
+directory.
+
+gradient-descent-normal.fz - This file contains the gradient descent code 
+almost exactly as it is written in the paper (amended only with some 
+wrappers and printing).  Because it uses the in-language list type, it is 
+rather slow.
+
+gradient-descent-vector.fz - This is a version of the gradient descent from 
+the paper in which the in-language list type is replaced by a primitive 
+vector type, improving performance considerably.  The budget usage and 
+results are otherwise the same.  We recommend running examples with this 
+version.
+
+gradient-descent-atOnce.fz - This is a version of gradient descent that 
+updates all of the parameters in one piece.  It produces the same results 
+as the other two versions, but because pieces are checked by the Fuzz 
+verifier/type-checker, and the Fuzz verifier uses simple composition 
+internally, it uses up more privacy budget.  Because the advanced privacy 
+filter has a high overhead when run on few pieces (i.e., fewer than a few 
+hundred), this version does a good job of simulating how the privacy budget 
+would get used up if only simple composition were used.  (Additionally, it 
+runs significantly faster.)
+
+stagewise-regression.fz - This implements stagewise regression followed by 
+gradient-descent, as described in our paper.
+
+All of these files assume a database that has a label and 145 columns of 
+real valued data.  (We have provided the file data/census-sample.data which 
+provides 2000 rows of the census database file for testing purposes.)  We 
+encourage the evaluator to modify these files or write their own to confirm 
+that Adaptive Fuzz programs never break their privacy guarantee and that 
+they effectively make use of privacy filters.
+
+
+----------------------------------------
+INSTALLATION
+----------------------------------------
+Setting up Adaptive Fuzz requires the ocaml compiler (>= 4.02), 
+ocaml-build, and ocaml-find.  See http://www.ocaml.org/docs/install.html 
+for installing ocaml on your operating system.  Once ocaml and its package 
+manager are installed, do:
+$ opam init
+$ opam install ocamlbuild
+$ opam install ocamlfind
+to install ocamlbuild and ocamlfind.
+
+Once these are installed, navigate to the main directory of this artifact 
+(the one this file should be in), and do:
+$ make
+to make adaptive fuzz.
+
+
+
+----------------------------------------
+STEP-BY-STEP EVALUATION INSTRUCTIONS
+----------------------------------------
+
+In general, Adaptive Fuzz programs can be run with the command
+$ ./fuzz filename
+For instance, to run the small Adaptive Fuzz test suite, execute the command
+$ ./fuzz tests/runTests.fz
+
+1) TESTING THE PRIVACY FILTER
+----------------------------------------
+There is one test file that is not run as part of the main runTests.fz test
+suite: tests/test-filter.fz.  This is because this test will perform many
+pieces, and this can be performed faster if the compiler is disabled.  
+To run this test, run:
+$ ./fuzz --no-compiler tests/test-filter.fz
+This test performs two thousand pieces with epsilon=0.001 on a database with 
+a budget of (epsilon=1.0, delta=0.0001).  If Adaptive Fuzz used only simple 
+composition, then the test would abort before finishing the pieces and fail.  
+As is, the test succeeds with an estimated remaining epsilon budget of over 
+0.6.  If the evaluator is so inclined, (s)he can check the numbers produced 
+by this test against the formula from Theorem 2.11.
+
+
+2) COMPARING GRADIENT DESCENT WITH PRIVACY FILTER AND WITHOUT
+----------------------------------------
+The gradient descent and stagewise regression examples take command line 
+arguments to configure their behavior.  They can be run as follows:
+$ ./fuzz examples/gradient-descent-vector.fz -args 1000 11 "data/census-sample.data"
+The arguments after the -args flag indicate, in order, the number of rows 
+to read from the database, the negative exponent of 2 that we will use for 
+epsilon (in this case, epsilon=2^(-11)), and the database file.
+
+Note the results of running the program:
+$ ./fuzz examples/gradient-descent-vector.fz -args 1000 11 "data/census-sample.data"
+It performs 40 iterations of the algorithm, each with 145 pieces, one for 
+each parameter in the database.  Under simple composition rules, this would 
+consume 40*155*2^(-11)>3 epsilon of budget.  Notice the values printed for 
+the amount of epsilon budget left after each round of the algorithm.  These 
+are the lines that start like:
+> We have 1*ε budget remaining ...
+> We have 0.92431640625*ε budget remaining ...
+> We have 0.8486328125*ε budget remaining ...
+> We have 0.77294921875*ε budget remaining ...
+> We have 0.717051571898*ε budget remaining ...
+> We have 0.713158816916*ε budget remaining ...
+> We have 0.709295134953*ε budget remaining ...
+Particularly, notice that the budget is not shrinking linearly as would be 
+expected using simple composition.  (The evaluator may want to stop the 
+program before it finishes with Ctrl-c as otherwise it may take a long time.)
+Comparatively, running
+$ ./fuzz examples/gradient-descent-atOnce.fz -args 1000 11 "data/census-sample.data"
+takes much more of the privacy budget.  In this case, there are only 40 
+pieces, each with an individual budget usage of 155*2^(-11), and the 
+privacy filter is not able to be effective.  Indeed, Adaptive Fuzz notices 
+that the overhead for the advanced filter would be too high and is only 
+ever able to use the simple filter.  The relevant lines that indicate the 
+remaining budget should look more like:
+> We have 1*ε budget remaining ...
+> We have 0.92431640625*ε budget remaining ...
+> We have 0.8486328125*ε budget remaining ...
+> We have 0.77294921875*ε budget remaining ...
+> We have 0.697265625*ε budget remaining ...
+> We have 0.62158203125*ε budget remaining ...
+> We have 0.5458984375*ε budget remaining ...
+The first few numbers are the same as before -- this is because there is so 
+much overhead in the advanced privacy filter that simple composition is 
+more effective for the first few hundred pieces -- but by the fourth round, 
+we can start to see the difference.  When the pieces are grouped together, 
+as in the atOnce version, the remaining budget shrinks much more quickly.
+
+The evaluator should feel free to try running these with other epsilon 
+values.  Additionally, the budget of the database can be changed by 
+modifying the file examples/gradient-descent-*.fz itself.  In particular, 
+the line that starts with "loadDB[db]" is in charge of setting up the 
+database.  It takes a pair of numbers that indicate the epsilon and delta.  
+In the file, these values are (1, 0.00001), but you can change them if you 
+wish.
+
+
+3) EVALUATING ACCURACY
+----------------------------------------
+If the evaluator would like to verify that the different gradient descent 
+algorithms all produce the same results, (s)he can use the unsafe, 
+developer-only command-line flag "--no-noise", which still calculates 
+privacy budget usage but always generates noise equal to zero.  For 
+instance, the values produced from each of these commands
+$ ./fuzz --no-noise examples/gradient-descent-normal.fz -args 1000 11 "data/census-sample.data"
+$ ./fuzz --no-noise examples/gradient-descent-vector.fz -args 1000 11 "data/census-sample.data"
+$ ./fuzz --no-noise examples/gradient-descent-atOnce.fz -args 1000 11 "data/census-sample.data"
+are all the same.
+
+
+4) CASE STUDIES ON THE FULL DATA SET
+----------------------------------------
+If the evaluator would like to run the case studies like we did in the 
+paper, this will require downloading the full census database and modifying 
+it per our script.  The script is written in Haskell, and it is provided in 
+examples/data/massageUSCensus1990.hs and should be run on the database file 
+"USCensus1990raw.data".
+
+The script's behavior is described in Appendix B to our paper submission 
+(the appendixes can be found in the extended version of the paper, which we 
+provided as supplementary material).
+
+Information about the database file, along with a download link, can be found at:
+https://kdd.ics.uci.edu/databases/census1990/USCensus1990raw.html
+Specifically, the database itself is at:
+https://kdd.ics.uci.edu/databases/census1990/USCensus1990raw.data.txt
+
+
+5) STAGEWISE REGRESSION
+----------------------------------------
+The stagewise regression example can be run just like the others:
+$ ./fuzz examples/stagewise-regression.fz -args 1000 11 "data/census-sample.data"
+The evaluator can see that the code is the same (up to some wrappers and 
+printing) as in the paper, and Adaptive Fuzz is correctly able to determine 
+its privacy usage.  Unless a large value of epsilon is used (a small value 
+for the negative exponent) or a larger database is used, any numbers 
+generated will likely be washed out by noise.  But, if the evaluator chose 
+to download the full census database, (s)he should feel free to try running 
+this stagewise regression example on it to duplicate our case study.  Of 
+course, as we mentioned earlier, the results will not be the same as in the 
+paper (due to randomness), but they will likely be similar.
+
+

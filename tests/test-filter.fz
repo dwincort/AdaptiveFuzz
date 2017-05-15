@@ -1,0 +1,24 @@
+
+// Testing out probablities
+import "primitives.fz"
+
+// A simple function designed to use up some privacy budget.
+function simple forall(DB) (eps : num) (db :[[eps]] DB) : fuzzy () {
+  return ()
+}
+
+function testfilter (eps : num) (iters : int) : string {
+  e = getEpsilon ();
+  case runFuzz[num][()] eps (simple[num] eps) of {
+    inl(s) => s
+  | inr(x) => if iters <= 0 then { showNum e } else {
+        print (showInt iters^" iterations remaining.  Approximate remaining epsilon in budget="^showNum e);
+        testfilter eps (iters -. 1) }
+  }
+}
+
+loadDB[num] (fun (_ : ()) {1}) (1.0,0.0001);
+
+assertEq[string] "Test filter #1" (testfilter 0.001 2000) "0.630973363046";
+
+"test"
